@@ -8,5 +8,13 @@ jobs:
     name: Build image
     runs-on: self-hosted
     steps:
-    - name: Invoke make
-      run: make
+      - name: Checkout Repository inkl. Submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+    
+      - name: Zeige Dateistruktur (optional, zum Debuggen)
+        run: ls -la
+    
+      - name: Starte Make
+        run: make
