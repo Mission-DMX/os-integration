@@ -8,12 +8,12 @@ jobs:
     name: Build image
     runs-on: self-hosted
     steps:
-      - name: Checkout Repository inkl. Submodule
+      - name: Checkout Repository incl. Submodule
         uses: actions/checkout@v4
         with:
           submodules: recursive
     
-      - name: Zeige Dateistruktur (optional, zum Debuggen)
+      - name: Show datastructure
         run: ls -la
     
       - name: Starte Make
