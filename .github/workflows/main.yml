@@ -16,5 +16,8 @@ jobs:
       - name: Show datastructure
         run: ls -la
     
-      - name: Starte Make
-        run: make
+      - name: Init Yocto
+        run: make init
+
+      - name: Build Yocto
+        run: make build
