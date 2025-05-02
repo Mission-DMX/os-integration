@@ -8,6 +8,9 @@ jobs:
     name: Build image
     runs-on: self-hosted
     steps:
+      - name: Install Yocto dependencies
+        run: sudo apt-get update && sudo apt-get install -y chrpath diffstat gawk lz4
+    
       - name: Checkout Repository incl. Submodule
         uses: actions/checkout@v4
         with:
