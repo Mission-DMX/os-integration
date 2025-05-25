@@ -20,7 +20,7 @@ jobs:
         run: make build
 
       - name: Copy and paste config file
-        run: cp config/local.conf conf/local.conf & cp config/bblayers.conf conf/bblayers.conf
+        run: cp config/local.conf build/conf/local.conf & cp config/bblayers.conf build/conf/bblayers.conf
 
       - name: Build Yocto with new config
         run: make build
