@@ -14,10 +14,10 @@ jobs:
           submodules: recursive
     
       - name: Init Yocto
-        run: 
-	  make init
-	  cp ../config/local.conf conf/local.conf
-          cp ../config/bblayers.conf conf/bblayers.conf
+        run: make init
+
+      - name: Copy and paste config file
+        run: cp ../config/local.conf conf/local.conf & cp ../config/bblayers.conf conf/bblayers.conf
 
       - name: Build Yocto
         run: make build
