@@ -1,10 +1,18 @@
 [submodule "poky"]
 	path = poky
 	url = https://git.yoctoproject.org/poky
-
 [submodule "meta-openembedded"]
 	path = meta-openembedded
 	url = https://git.openembedded.org/meta-openembedded
+	branch = walnascar
 [submodule "meta-wayland"]
 	path = meta-wayland
 	url = https://codeberg.org/flk/meta-wayland.git
+	branch = walnascar
+[submodule "meta-intel"]
+	path = meta-intel
+	url = git://git.yoctoproject.org/meta-intel
+	branch = walnascar
+[submodule "meta-amd"]
+	path = meta-amd
+	url = git://git.yoctoproject.org/meta-amd
