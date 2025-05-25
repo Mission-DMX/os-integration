@@ -13,6 +13,3 @@
 	path = meta-intel
 	url = git://git.yoctoproject.org/meta-intel
 	branch = walnascar
-[submodule "meta-amd"]
-	path = meta-amd
-	url = git://git.yoctoproject.org/meta-amd
