@@ -13,11 +13,11 @@ jobs:
         with:
           submodules: recursive
     
-      - name: Show datastructure
-        run: ls -la
-    
       - name: Init Yocto
-        run: make init
+        run: 
+	  make init
+	  cp ../config/local.conf conf/local.conf
+          cp ../config/bblayers.conf conf/bblayers.conf
 
       - name: Build Yocto
         run: make build
