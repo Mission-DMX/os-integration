@@ -1,5 +1,6 @@
 SUMMARY = "Install Postboot init script"
 DESCRIPTION = "This script performs various initializations after boot, especially taking care of first run setup"
+LICENSE = "GPLv3"
 SRC_URI = " \
     file://user-init.sh \
     file://user-init.service \
