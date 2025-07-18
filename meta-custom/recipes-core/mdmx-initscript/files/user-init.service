@@ -4,3 +4,6 @@ Description=start user initialization upon first boot
 [Service]
 Type=simple
 ExecStart=/bin/sh -c 'sleep 5 ; /usr/sbin/user-init.sh'
+
+[Install]
+WantedBy=multi-user.target
