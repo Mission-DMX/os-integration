@@ -3,7 +3,7 @@
 POKY_DIR := poky
 BUILD_DIR := build
 
-$(BUILD_DIR)/init: clean
+$(BUILD_DIR)/init:
 	echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
 	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR)"
 	rm build/conf/local.conf
@@ -30,9 +30,10 @@ run:
 	-usb -device usb-tablet -usb -device usb-kbd \
 	-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0 \
 	-display gtk,gl=on,show-cursor=on \
+	-serial stdio \
 	-netdev user,id=mdmx-test-os-iface \
 	-drive file=$(BUILD_DIR)/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.ext4,if=virtio,format=raw \
 	-kernel $(BUILD_DIR)/tmp/deploy/images/qemux86-64/bzImage-qemux86-64.bin \
-	-append "root=/dev/hda"
+	-append "root=/dev/vda"
 	
 # 
