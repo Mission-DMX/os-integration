@@ -35,5 +35,9 @@ run:
 	-drive file=$(BUILD_DIR)/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.ext4,if=virtio,format=raw \
 	-kernel $(BUILD_DIR)/tmp/deploy/images/qemux86-64/bzImage-qemux86-64.bin \
 	-append "root=/dev/vda"
-	
+
+kernel-config:
+	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake -c menuconfig virtual/kernel && bitbake -c savedefconfig virtual/kernel"
+	echo "Please copy generated kernel config (see above) to meta-custom/recipes-kernel/linux/files/defconfig"
+
 # 
