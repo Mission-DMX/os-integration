@@ -1,10 +1,10 @@
-.PHONY: run build clean
+.PHONY: run debug build clean
 
 POKY_DIR := poky
 BUILD_DIR := build
 
 $(BUILD_DIR)/init:
-	echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+	echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns || echo "WARN: User NS was not explicetly enabled."
 	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR)"
 	rm build/conf/local.conf
 	rm build/conf/bblayers.conf
@@ -24,17 +24,40 @@ clean:
 
 run:
 	qemu-system-x86_64 -name mission-dmx-os \
-	-machine pc-q35-jammy-hpb -accel kvm -cpu Skylake-Client-v2 \
+	-machine q35 -accel kvm -cpu Skylake-Client-v2 \
 	-m 32768 -smp 8,sockets=8,cores=1,threads=1 \
 	-audio driver=alsa \
 	-usb -device usb-tablet -usb -device usb-kbd \
 	-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0 \
+	-vga none -device virtio-vga-gl \
 	-display gtk,gl=on,show-cursor=on \
 	-serial stdio \
 	-netdev user,id=mdmx-test-os-iface \
 	-drive file=$(BUILD_DIR)/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.ext4,if=virtio,format=raw \
 	-kernel $(BUILD_DIR)/tmp/deploy/images/qemux86-64/bzImage-qemux86-64.bin \
 	-append "root=/dev/vda"
+
+debug:
+	@echo "GDB stub will listen on localhost:1234 (CPU halted at startup)."
+	@echo "Attach in a second terminal with:"
+	@echo "  gdb $(BUILD_DIR)/tmp/work/qemux86_64-poky-linux/linux-yocto/*/linux-qemux86_64-standard-build/vmlinux"
+	@echo "  (gdb) target remote :1234"
+	@echo "  (gdb) continue"
+	@echo ""
+	qemu-system-x86_64 -name mission-dmx-os \
+	-machine q35 -accel kvm -cpu Skylake-Client-v2 \
+	-m 32768 -smp 8,sockets=8,cores=1,threads=1 \
+	-audio driver=alsa \
+	-usb -device usb-tablet -usb -device usb-kbd \
+	-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0 \
+	-vga none -device virtio-vga-gl \
+	-display gtk,gl=on,show-cursor=on \
+	-serial stdio \
+	-netdev user,id=mdmx-test-os-iface \
+	-drive file=$(BUILD_DIR)/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.ext4,if=virtio,format=raw \
+	-kernel $(BUILD_DIR)/tmp/deploy/images/qemux86-64/bzImage-qemux86-64.bin \
+	-append "root=/dev/vda nokaslr" \
+	-s -S
 
 kernel-config:
 	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake -c menuconfig virtual/kernel && bitbake -c savedefconfig virtual/kernel"
