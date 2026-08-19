@@ -22,6 +22,13 @@ build: $(BUILD_DIR)/init build/conf/local.conf build/conf/bblayers.conf
 clean:
 	rm -rf $(BUILD_DIR)
 
+#
+# If running on a non-nvidia system, use:
+#
+# -vga none -device virtio-vga \
+# -display gtk,show-cursor=on \
+#
+
 run:
 	qemu-system-x86_64 -name mission-dmx-os \
 	-machine q35 -accel kvm -cpu Skylake-Client-v2 \
@@ -29,8 +36,8 @@ run:
 	-audio driver=alsa \
 	-usb -device usb-tablet -usb -device usb-kbd \
 	-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0 \
-	-vga none -device virtio-vga-gl \
-	-display gtk,gl=on,show-cursor=on \
+	-vga none -device virtio-vga \
+	-display gtk,show-cursor=on \
 	-serial stdio \
 	-netdev user,id=mdmx-test-os-iface \
 	-drive file=$(BUILD_DIR)/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.ext4,if=virtio,format=raw \
@@ -50,8 +57,8 @@ debug:
 	-audio driver=alsa \
 	-usb -device usb-tablet -usb -device usb-kbd \
 	-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0 \
-	-vga none -device virtio-vga-gl \
-	-display gtk,gl=on,show-cursor=on \
+	-vga none -device virtio-vga \
+	-display gtk,show-cursor=on \
 	-serial stdio \
 	-netdev user,id=mdmx-test-os-iface \
 	-drive file=$(BUILD_DIR)/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.ext4,if=virtio,format=raw \
