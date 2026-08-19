@@ -9,18 +9,20 @@ After=getty@tty1.service
 [Service]
 Type=simple
 User=root
+RuntimeDirectory=sway
+RuntimeDirectoryMode=0700
 Environment=HOME=/root
-Environment=XDG_RUNTIME_DIR=/run/user/0
+Environment=XDG_RUNTIME_DIR=/run/sway
 Environment=XDG_SESSION_TYPE=wayland
 Environment=LIBSEAT_BACKEND=noop
 Environment=WLR_RENDERER=pixman
 StandardInput=tty
+StandardOutput=journal
+StandardError=journal
 TTYPath=/dev/tty1
 TTYVHangup=yes
 TTYVTDisallocate=yes
-ExecStartPre=/bin/mkdir -p /run/user/0
-ExecStartPre=/bin/chmod 0700 /run/user/0
-ExecStart=/usr/bin/sway
+ExecStart=/usr/bin/dbus-run-session -- /usr/bin/sway
 Restart=on-failure
 RestartSec=5
 
