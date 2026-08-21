@@ -36,7 +36,7 @@ run:
 	-audio driver=alsa \
 	-usb -device usb-tablet -usb -device usb-kbd \
 	-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0 \
-	-vga none -device virtio-vga \
+	-vga none -device virtio-gpu-pci,xres=1920,yres=1080,edid=on \
 	-display gtk,show-cursor=on \
 	-serial stdio \
 	-netdev user,id=mdmx-test-os-iface \
@@ -57,7 +57,7 @@ debug:
 	-audio driver=alsa \
 	-usb -device usb-tablet -usb -device usb-kbd \
 	-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0 \
-	-vga none -device virtio-vga \
+	-vga none -device virtio-gpu-pci,xres=1920,yres=1080,edid=on \
 	-display gtk,show-cursor=on \
 	-serial stdio \
 	-netdev user,id=mdmx-test-os-iface \

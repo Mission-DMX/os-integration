@@ -9,6 +9,7 @@ SRC_URI = " \
     file://50-waybar.conf \
     file://waybar-config \
     file://waybar-style.css \
+    file://sway-env.sh \
 "
 
 inherit allarch systemd
@@ -28,6 +29,9 @@ do_install() {
     install -d ${D}${sysconfdir}/sway/waybar
     install -m 0644 ${S}/waybar-config ${D}${sysconfdir}/sway/waybar/config
     install -m 0644 ${S}/waybar-style.css ${D}${sysconfdir}/sway/waybar/style.css
+
+    install -d ${D}${sysconfdir}/profile.d
+    install -m 0644 ${S}/sway-env.sh ${D}${sysconfdir}/profile.d/sway-env.sh
 }
 
 FILES:${PN} = " \
@@ -35,4 +39,5 @@ FILES:${PN} = " \
     ${sysconfdir}/sway/config.d/50-waybar.conf \
     ${sysconfdir}/sway/waybar/config \
     ${sysconfdir}/sway/waybar/style.css \
+    ${sysconfdir}/profile.d/sway-env.sh \
 "
