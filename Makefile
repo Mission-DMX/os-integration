@@ -34,7 +34,7 @@ run:
 	-machine q35 -accel kvm -cpu Skylake-Client-v2 \
 	-m 32768 -smp 8,sockets=8,cores=1,threads=1 \
 	-audio driver=alsa \
-	-usb -device usb-tablet -usb -device usb-kbd \
+	-device virtio-tablet-pci -device virtio-keyboard-pci \
 	-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0 \
 	-vga none -device virtio-gpu-pci,xres=1920,yres=1080,edid=on \
 	-display gtk,show-cursor=on \
@@ -55,7 +55,7 @@ debug:
 	-machine q35 -accel kvm -cpu Skylake-Client-v2 \
 	-m 32768 -smp 8,sockets=8,cores=1,threads=1 \
 	-audio driver=alsa \
-	-usb -device usb-tablet -usb -device usb-kbd \
+	-device virtio-tablet-pci -device virtio-keyboard-pci \
 	-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0 \
 	-vga none -device virtio-gpu-pci,xres=1920,yres=1080,edid=on \
 	-display gtk,show-cursor=on \
