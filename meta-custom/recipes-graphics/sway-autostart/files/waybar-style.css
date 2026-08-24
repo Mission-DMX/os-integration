@@ -30,7 +30,8 @@ window#waybar {
 #window,
 #cpu,
 #memory,
-#clock {
+#clock,
+#custom-fish {
     padding: 0 10px;
 }
 
@@ -44,4 +45,22 @@ window#waybar {
 
 #memory {
     color: #b8e6b8;
+}
+
+#custom-fish.running {
+    color: #7ed957;
+}
+
+#custom-fish.starting {
+    color: #ffd699;
+}
+
+#custom-fish.crashed {
+    color: #ff6b6b;
+    background-color: #3a1a1a;
+}
+
+#custom-fish.stopped,
+#custom-fish.unknown {
+    color: #888888;
 }

@@ -5,13 +5,19 @@
     "spacing": 4,
     "modules-left": ["sway/workspaces", "sway/mode"],
     "modules-center": ["sway/window"],
-    "modules-right": ["cpu", "memory", "clock"],
+    "modules-right": ["custom/fish", "cpu", "memory", "clock"],
     "sway/workspaces": {
         "disable-scroll": true,
         "all-outputs": false
     },
     "sway/window": {
         "max-length": 60
+    },
+    "custom/fish": {
+        "exec": "cat /run/fish-monitor/status.json 2>/dev/null || echo '{\"text\":\" \",\"class\":\"unknown\",\"tooltip\":\"fish-monitor not running\"}'",
+        "return-type": "json",
+        "interval": 2,
+        "on-click": "swaymsg '[app_id=\"fish-terminal\"] scratchpad show'"
     },
     "cpu": {
         "format": "CPU {usage}%",
