@@ -103,7 +103,13 @@ def main() -> int:
         if rc == 0:
             write_status("stopped")
             print("[fish-monitor] fish exited normally", flush=True)
-            return 0
+            try:
+                input("\nFish exited. Press ENTER to restart, "
+                      "or Ctrl+D to quit: ")
+            except EOFError:
+                print("", flush=True)
+                return 0
+            continue
 
         write_status("crashed", f"exit code {rc}")
         print(f"[fish-monitor] fish crashed with exit code {rc}",

@@ -68,6 +68,16 @@ do_configure() {
     # -I/usr/local/include is host-side and trips Yocto's
     # -Werror=poison-system-directories cross-compilation guard.
     sed -i 's| -I/usr/local/include||g' ${S}/Makefile
+
+    # The upstream Makefile never threads LDFLAGS into its link commands
+    # (every link is "${CXX} ... ${LFLAGS}"), which drops two things
+    # Yocto's TARGET_LDFLAGS supplies: --hash-style=gnu (triggers the
+    # 'ldflags: missing GNU_HASH' QA error) and -fdebug-prefix-map=... (the
+    # LTO backend re-emits debug info at link time, so without the map the
+    # workdir path leaks into .debug/fish and trips the 'buildpaths' QA).
+    # Inject $(LDFLAGS) into LFLAGS before the first LFLAGS assignment so
+    # both flag groups reach every ${CXX} link invocation.
+    sed -i '0,/^LFLAGS += /{s|^LFLAGS += |LFLAGS += $(LDFLAGS)\nLFLAGS += |}' ${S}/Makefile
 }
 
 do_compile() {

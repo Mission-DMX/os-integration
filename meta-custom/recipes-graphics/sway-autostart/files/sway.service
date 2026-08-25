@@ -12,6 +12,7 @@ User=root
 RuntimeDirectory=sway
 RuntimeDirectoryMode=0700
 Environment=HOME=/root
+Environment=LANG=en_US.UTF-8
 Environment=XDG_RUNTIME_DIR=/run/sway
 Environment=XDG_SESSION_TYPE=wayland
 Environment=LIBSEAT_BACKEND=noop

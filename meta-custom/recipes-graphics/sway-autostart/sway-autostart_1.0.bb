@@ -18,7 +18,7 @@ inherit allarch systemd
 SYSTEMD_SERVICE:${PN} = "sway.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
-RDEPENDS:${PN} = "sway xkeyboard-config waybar dbus mako"
+RDEPENDS:${PN} = "sway xkeyboard-config waybar dbus mako locale-base-en-us"
 
 do_install() {
     install -d ${D}${systemd_system_unitdir}

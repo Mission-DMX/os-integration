@@ -30,9 +30,18 @@ window#waybar {
 #window,
 #cpu,
 #memory,
-#clock,
-#custom-fish {
+#clock {
     padding: 0 10px;
+}
+
+#custom-fish {
+    background-image: url('/usr/share/icons/hicolor/32x32/apps/fish-terminal.png');
+    background-repeat: no-repeat;
+    background-size: 16px 16px;
+    background-position: center;
+    min-width: 16px;
+    padding: 0 14px;
+    color: transparent;
 }
 
 #clock {
@@ -48,19 +57,19 @@ window#waybar {
 }
 
 #custom-fish.running {
-    color: #7ed957;
+    border-bottom: 2px solid #7ed957;
 }
 
 #custom-fish.starting {
-    color: #ffd699;
+    border-bottom: 2px solid #ffd699;
 }
 
 #custom-fish.crashed {
-    color: #ff6b6b;
+    border-bottom: 2px solid #ff6b6b;
     background-color: #3a1a1a;
 }
 
 #custom-fish.stopped,
 #custom-fish.unknown {
-    color: #888888;
+    opacity: 0.4;
 }
