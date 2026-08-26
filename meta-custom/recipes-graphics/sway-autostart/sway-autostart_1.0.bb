@@ -6,6 +6,7 @@ S = "${UNPACKDIR}"
 
 SRC_URI = " \
     file://sway.service \
+    file://30-pulseaudio.conf \
     file://40-mako.conf \
     file://50-waybar.conf \
     file://waybar-config \
@@ -18,13 +19,14 @@ inherit allarch systemd
 SYSTEMD_SERVICE:${PN} = "sway.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
-RDEPENDS:${PN} = "sway xkeyboard-config waybar dbus mako locale-base-en-us"
+RDEPENDS:${PN} = "sway xkeyboard-config waybar dbus mako locale-base-en-us pulseaudio-server"
 
 do_install() {
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${S}/sway.service ${D}${systemd_system_unitdir}/
 
     install -d ${D}${sysconfdir}/sway/config.d
+    install -m 0644 ${S}/30-pulseaudio.conf ${D}${sysconfdir}/sway/config.d/
     install -m 0644 ${S}/40-mako.conf ${D}${sysconfdir}/sway/config.d/
     install -m 0644 ${S}/50-waybar.conf ${D}${sysconfdir}/sway/config.d/
 
@@ -38,6 +40,7 @@ do_install() {
 
 FILES:${PN} = " \
     ${systemd_system_unitdir}/sway.service \
+    ${sysconfdir}/sway/config.d/30-pulseaudio.conf \
     ${sysconfdir}/sway/config.d/40-mako.conf \
     ${sysconfdir}/sway/config.d/50-waybar.conf \
     ${sysconfdir}/sway/waybar/config \

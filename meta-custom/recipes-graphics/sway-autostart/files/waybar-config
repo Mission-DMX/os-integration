@@ -1,9 +1,9 @@
 {
     "layer": "top",
     "position": "top",
-    "height": 30,
+    "height": 44,
     "spacing": 4,
-    "modules-left": ["sway/workspaces", "sway/mode"],
+    "modules-left": ["custom/launcher", "sway/workspaces", "sway/mode"],
     "modules-center": ["sway/window"],
     "modules-right": ["custom/fish", "cpu", "memory", "clock"],
     "sway/workspaces": {
@@ -12,6 +12,12 @@
     },
     "sway/window": {
         "max-length": 60
+    },
+    "custom/launcher": {
+        "format": " Apps ",
+        "tooltip": true,
+        "tooltip-format": "Tap to open the application launcher",
+        "on-click": "swaymsg exec /usr/bin/application-launcher"
     },
     "custom/fish": {
         "exec": "cat /run/fish-monitor/status.json 2>/dev/null || echo '{\"text\":\" \",\"class\":\"unknown\",\"tooltip\":\"fish-monitor not running\"}'",

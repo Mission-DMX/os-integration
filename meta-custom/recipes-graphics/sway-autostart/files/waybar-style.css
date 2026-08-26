@@ -44,6 +44,22 @@ window#waybar {
     color: transparent;
 }
 
+#custom-launcher {
+    background-color: #6b8afd;
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: bold;
+    min-width: 80px;
+    padding: 0 18px;
+    margin: 4px 8px 4px 4px;
+    border-radius: 6px;
+}
+
+#custom-launcher:hover,
+#custom-launcher:active {
+    background-color: #4a63d6;
+}
+
 #clock {
     color: #a0d8ff;
 }

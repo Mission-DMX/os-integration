@@ -1,0 +1,16 @@
+[Match]
+Name=en*
+Name=eth*
+
+[Network]
+DHCP=yes
+DNSSEC=no
+
+[DHCPv4]
+UseDNS=yes
+UseHostname=yes
+RouteMetric=100
+
+[DHCPv6]
+UseDNS=yes
+RouteMetric=100

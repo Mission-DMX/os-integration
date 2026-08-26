@@ -3,6 +3,10 @@
 POKY_DIR := poky
 BUILD_DIR := build
 
+# Bridge on the host that qemu should attach the guest NIC to.
+
+BRIDGE ?= virbr0
+
 $(BUILD_DIR)/init:
 	echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns || echo "WARN: User NS was not explicetly enabled."
 	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR)"
@@ -40,6 +44,7 @@ run:
 	-display gtk,show-cursor=on \
 	-serial stdio \
 	-netdev user,id=mdmx-test-os-iface \
+	-device virtio-net-pci,netdev=mdmx-test-os-iface \
 	-drive file=$(BUILD_DIR)/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.ext4,if=virtio,format=raw \
 	-kernel $(BUILD_DIR)/tmp/deploy/images/qemux86-64/bzImage-qemux86-64.bin \
 	-append "root=/dev/vda"
@@ -60,7 +65,8 @@ debug:
 	-vga none -device virtio-gpu-pci,xres=1920,yres=1080,edid=on \
 	-display gtk,show-cursor=on \
 	-serial stdio \
-	-netdev user,id=mdmx-test-os-iface \
+	-netdev bridge,id=mdmx-test-os-iface,br=$(BRIDGE) \
+	-device virtio-net-pci,netdev=mdmx-test-os-iface \
 	-drive file=$(BUILD_DIR)/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.ext4,if=virtio,format=raw \
 	-kernel $(BUILD_DIR)/tmp/deploy/images/qemux86-64/bzImage-qemux86-64.bin \
 	-append "root=/dev/vda nokaslr" \

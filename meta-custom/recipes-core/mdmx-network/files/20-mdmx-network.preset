@@ -1,0 +1,6 @@
+# Enable network stack unconditionally at first boot. Systemd applies
+# presets during rootfs assembly (`systemctl preset-all --preset-mode`
+# is what Yocto's systemd class runs), so this doesn't rely on
+# pkg_postinst_ontarget executing correctly on target.
+enable systemd-networkd.service
+enable systemd-resolved.service
