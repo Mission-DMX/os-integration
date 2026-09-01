@@ -1,4 +1,5 @@
 #! /bin/sh
-echo "MissionDMX - Welcome" > /etc/motd
-
-# TODO initialize user data here if /home partition is empty
+# Write the MOTD into /var so it survives firmware updates (root partitions
+# are treated as read-only from an update-safety perspective). /etc/motd is
+# a symlink → /var/motd installed by the recipe.
+echo "MissionDMX - Welcome" > /var/motd

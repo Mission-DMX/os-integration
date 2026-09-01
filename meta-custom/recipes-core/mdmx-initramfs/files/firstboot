@@ -1,0 +1,156 @@
+#!/bin/sh
+# firstboot: initramfs-framework module (deployed as /init.d/95-firstboot).
+#
+# The initramfs-framework dispatcher in /init derives the module name via
+# `basename $file | cut -d'-' -f 2`, so the filename must be a single
+# word after the leading number ("95-firstboot", not "95-mdmx-firstboot"),
+# and the callback functions must be firstboot_enabled / firstboot_run.
+#
+# Runs after 90-rootfs has mounted the root filesystem at $ROOTFS_DIR.
+# 1. If PARTLABEL "userdata" is missing, create partition 4 in the
+#    remaining disk space (sgdisk) and format it ext4 (mkfs.ext4 -L
+#    userdata).
+# 2. Mount the userdata partition, seed its `home/`, `var/` and `root/`
+#    subdirs from the rootfs slot on first boot, then bind-mount them
+#    onto /home, /var and /root inside $ROOTFS_DIR.
+# 3. Remount the rootfs slot read-only so an atomic A/B firmware
+#    update can never corrupt a running slot — every writable directory
+#    on the box is now either a bind mount from userdata, the etc
+#    overlay, or a tmpfs.
+# 4. Move the userdata mount into $ROOTFS_DIR so 99-finish moves it
+#    across switch_root.
+
+firstboot_enabled() {
+    return 0
+}
+
+# Derive the parent disk device (e.g. /dev/vda) from a partition device
+# path. The input may be a symlink under /dev/disk/by-partlabel/... —
+# /sys/class/block/ only knows the real device name (vda2), not the
+# partlabel alias, so we resolve the symlink first.
+_firstboot_helper_parent_disk() {
+    part_dev=$(readlink -f "$1")
+    part_name=$(basename "$part_dev")
+    disk_dir=$(readlink -f "/sys/class/block/${part_name}/..")
+    disk_name=$(basename "$disk_dir")
+    echo "/dev/${disk_name}"
+}
+
+_firstboot_helper_wait_for() {
+    path="$1"
+    tries=0
+    while [ ! -e "$path" ] && [ $tries -lt 30 ]; do
+        sleep 1
+        tries=$((tries + 1))
+    done
+    [ -e "$path" ]
+}
+
+firstboot_run() {
+    if ! mountpoint -q "$ROOTFS_DIR"; then
+        msg "mdmx-firstboot: $ROOTFS_DIR not mounted, skipping"
+        return
+    fi
+
+    # Locate the rootfs slot partition. Prefer PARTLABEL passed via
+    # bootparam_root (root=PARTLABEL=rootfsA) but fall back to whichever
+    # of rootfsA / rootfsB currently mounts as $ROOTFS_DIR.
+    rootfs_part=""
+    case "$bootparam_root" in
+        PARTLABEL=*)
+            rootfs_part="/dev/disk/by-partlabel/${bootparam_root#PARTLABEL=}"
+            ;;
+    esac
+    if [ -z "$rootfs_part" ] || [ ! -e "$rootfs_part" ]; then
+        for lbl in rootfsA rootfsB; do
+            if [ -e "/dev/disk/by-partlabel/${lbl}" ]; then
+                rootfs_part="/dev/disk/by-partlabel/${lbl}"
+                break
+            fi
+        done
+    fi
+    if [ -z "$rootfs_part" ] || [ ! -e "$rootfs_part" ]; then
+        fatal "mdmx-firstboot: cannot locate a rootfs slot partition"
+    fi
+
+    disk=$(_firstboot_helper_parent_disk "$rootfs_part")
+    if [ ! -b "$disk" ]; then
+        fatal "mdmx-firstboot: derived disk '$disk' from '$rootfs_part' is not a block device"
+    fi
+
+    userdata_link="/dev/disk/by-partlabel/userdata"
+
+    if [ ! -e "$userdata_link" ]; then
+        msg "mdmx-firstboot: creating userdata partition on $disk"
+
+        # After flashing to a larger disk than the image expected, the GPT
+        # backup header still lives where the image ended. `sgdisk -e`
+        # relocates it to the actual end of the disk so free space is
+        # visible.
+        sgdisk -e "$disk" >/dev/null 2>&1 || true
+
+        # Create partition 4 using all remaining free space, Linux
+        # filesystem type (8300), name "userdata".
+        if ! sgdisk -n 4:0:0 -t 4:8300 -c 4:userdata "$disk"; then
+            fatal "mdmx-firstboot: sgdisk failed to create userdata partition"
+        fi
+
+        # Nudge the kernel into re-reading the partition table.
+        partprobe "$disk" >/dev/null 2>&1 \
+            || blockdev --rereadpt "$disk" >/dev/null 2>&1 \
+            || true
+        udevadm settle >/dev/null 2>&1 || true
+
+        _firstboot_helper_wait_for "$userdata_link" \
+            || fatal "mdmx-firstboot: userdata partition never appeared under /dev/disk/by-partlabel"
+
+        userdata_dev=$(readlink -f "$userdata_link")
+        msg "mdmx-firstboot: formatting $userdata_dev (ext4, label userdata)"
+        if ! mkfs.ext4 -F -L userdata "$userdata_dev"; then
+            fatal "mdmx-firstboot: mkfs.ext4 failed on $userdata_dev"
+        fi
+    fi
+
+    userdata_dev=$(readlink -f "$userdata_link")
+    mkdir -p /mnt/userdata
+    if ! mount -t ext4 "$userdata_dev" /mnt/userdata; then
+        fatal "mdmx-firstboot: failed to mount $userdata_dev on /mnt/userdata"
+    fi
+
+    if [ ! -e /mnt/userdata/.seeded ]; then
+        msg "mdmx-firstboot: seeding /home and /var from rootfs"
+        mkdir -p /mnt/userdata/home /mnt/userdata/var
+
+        # cp -a preserves ownership, timestamps, and symlinks. The trailing
+        # "/." copies contents rather than the directory itself, which
+        # matters when the destination already exists.
+        cp -a "$ROOTFS_DIR/var/." /mnt/userdata/var/ \
+            || debug "mdmx-firstboot: /var seed produced errors (usually benign)"
+        cp -a "$ROOTFS_DIR/home/." /mnt/userdata/home/ \
+            || debug "mdmx-firstboot: /home seed produced errors (usually benign)"
+
+        # Fallback motd in case user-init.service hasn't run yet.
+        if [ ! -e /mnt/userdata/var/motd ]; then
+            echo "MissionDMX" > /mnt/userdata/var/motd
+        fi
+
+        touch /mnt/userdata/.seeded
+        sync
+    fi
+
+    # Bind /home and /var from userdata onto the rootfs. The rootfs's
+    # own /home and /var become hidden but keep their inodes (only visible
+    # if the bind is undone), so nothing is destroyed.
+    mount --bind /mnt/userdata/home "$ROOTFS_DIR/home" \
+        || fatal "mdmx-firstboot: failed to bind-mount /home"
+    mount --bind /mnt/userdata/var "$ROOTFS_DIR/var" \
+        || fatal "mdmx-firstboot: failed to bind-mount /var"
+
+    # Move the underlying userdata mount into the rootfs so
+    # 99-finish's `mount --move` catch-all also carries it across
+    # switch_root. The bind mounts follow automatically because they
+    # reference the same superblock.
+    mkdir -p "$ROOTFS_DIR/mnt/userdata"
+    mount --move /mnt/userdata "$ROOTFS_DIR/mnt/userdata" \
+        || debug "mdmx-firstboot: failed to move /mnt/userdata into rootfs (bind mounts still work)"
+}

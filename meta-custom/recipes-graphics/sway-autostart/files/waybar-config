@@ -20,7 +20,7 @@
         "on-click": "swaymsg exec /usr/bin/application-launcher"
     },
     "custom/fish": {
-        "exec": "cat /run/fish-monitor/status.json 2>/dev/null || echo '{\"text\":\" \",\"class\":\"unknown\",\"tooltip\":\"fish-monitor not running\"}'",
+        "exec": "cat \"${XDG_RUNTIME_DIR:-/tmp}/fish-monitor/status.json\" 2>/dev/null || echo '{\"text\":\" \",\"class\":\"unknown\",\"tooltip\":\"fish-monitor not running\"}'",
         "return-type": "json",
         "interval": 2,
         "on-click": "swaymsg '[app_id=\"fish-terminal\"] scratchpad show'"

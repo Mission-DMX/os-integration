@@ -1,21 +1,30 @@
 [Unit]
 Description=Sway Wayland Compositor
 Documentation=man:sway(5)
-After=seatd.service
+After=seatd.service systemd-logind.service systemd-user-sessions.service
 Wants=seatd.service
 Conflicts=getty@tty1.service
 After=getty@tty1.service
 
 [Service]
 Type=simple
-User=root
+User=user
+Group=user
+# RuntimeDirectory creates /run/sway owned by User=user with mode 0700
+# before the service starts. This replaces the fragile
+# ExecStartPre=+/bin/install ... approach which was hanging on the
+# earlier iteration (the `install` binary blocked while start-pre was
+# also holding tty1, driving a restart loop).
 RuntimeDirectory=sway
 RuntimeDirectoryMode=0700
-Environment=HOME=/root
+Environment=HOME=/home/user
 Environment=LANG=en_US.UTF-8
+# Point XDG_RUNTIME_DIR at /run/sway rather than /run/user/1000 so we
+# don't collide with anything logind manages via pam_systemd. sway +
+# libseat + seatd don't require a logind session — seatd (running as
+# root, group=seat) hands us the DRM/input/tty fds directly.
 Environment=XDG_RUNTIME_DIR=/run/sway
 Environment=XDG_SESSION_TYPE=wayland
-Environment=LIBSEAT_BACKEND=noop
 Environment=WLR_RENDERER=pixman
 StandardInput=tty
 StandardOutput=journal

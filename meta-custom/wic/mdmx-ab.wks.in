@@ -1,0 +1,16 @@
+# short-description: MissionDMX A/B firmware image with GRUB-EFI
+# long-description:
+#   GPT partition table with:
+#     p1  esp        vfat  128 MiB  bootloader (GRUB-EFI) + grubenv
+#     p2  rootfsA    ext4   16 GiB  active firmware slot at build time
+#     p3  rootfsB    ext4   16 GiB  empty slot for OTA fallback
+#   Partition 4 (userdata) is created by the mdmx-firstboot initramfs
+#   module on first boot from remaining disk space.
+
+bootloader --ptable gpt --timeout=3 --configfile=mdmx-grub.cfg --append="console=ttyS0,115200 console=tty0 quiet"
+
+part /boot/efi --source bootimg-efi --sourceparams="loader=grub-efi,install-kernel-into-boot-dir=false" --label esp --part-name esp --active --align 1024 --fixed-size 128M --use-uuid --fstype=vfat
+
+part / --source rootfs --ondisk sda --fstype=ext4 --label rootfsA --part-name rootfsA --align 1024 --fixed-size 16384M --use-uuid
+
+part --ondisk sda --fstype=ext4 --label rootfsB --part-name rootfsB --align 1024 --fixed-size 16384M --use-uuid --no-fstab-update

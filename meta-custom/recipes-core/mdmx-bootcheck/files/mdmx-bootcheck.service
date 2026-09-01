@@ -1,0 +1,14 @@
+[Unit]
+Description=Mark current boot slot as good (RAUC-style try counter reset)
+Documentation=man:grub-editenv(1)
+After=graphical.target sway.service
+Wants=graphical.target
+ConditionPathExists=/boot/efi/EFI/BOOT/grubenv
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/mdmx-bootcheck.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=graphical.target

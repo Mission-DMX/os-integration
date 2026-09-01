@@ -21,6 +21,10 @@ do_install () {
     install -m 0644 ${WORKDIR}/user-init.service ${D}${systemd_system_unitdir}/system
 }
 
+# The /etc/motd → /var/motd symlink is installed in a
+# ROOTFS_POSTPROCESS_COMMAND in local.conf so it overrides the plain-file
+# /etc/motd that base-files ships without needing a base-files bbappend.
+
 NATIVE_SYSTEMD_SUPPORT = "1"
 SYSTEMD_PACKAGES = "${PN}"
 SYSTEMD_SERVICE:${PN} = "user-init.service"

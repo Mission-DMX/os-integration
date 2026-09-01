@@ -5,8 +5,9 @@ fish-monitor - supervise the realtime-fish daemon.
 Runs inside a foot terminal (app_id=fish-terminal). Spawns fish, forwards
 stdout/stderr to the containing terminal, watches for exit, and on crash
 cleans up leftover sockets and restarts. A JSON status file at
-/run/fish-monitor/status.json is written for waybar to consume via its
-custom module. A libnotify notification is sent whenever fish crashes.
+$XDG_RUNTIME_DIR/fish-monitor/status.json is written for waybar to
+consume via its custom module. A libnotify notification is sent whenever
+fish crashes.
 """
 
 import glob
@@ -20,7 +21,13 @@ from pathlib import Path
 
 FISH_BIN = "/usr/bin/fish"
 FISH_SOCKET_GLOB = "/tmp/fish.sock*"
-STATUS_DIR = Path("/run/fish-monitor")
+# Sway runs as the unprivileged `user`, so /run/fish-monitor isn't
+# writable (root-owned tmpfs). $XDG_RUNTIME_DIR is per-user, gets set
+# up by the sway service (RuntimeDirectory=sway → /run/sway) and is
+# already the mount point waybar's custom/fish exec block reads from.
+# Fall back to /tmp only if XDG_RUNTIME_DIR is unset (headless / debug).
+_RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+STATUS_DIR = Path(_RUNTIME_DIR) / "fish-monitor"
 STATUS_FILE = STATUS_DIR / "status.json"
 RESTART_DELAY_SECONDS = 3
 
