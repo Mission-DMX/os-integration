@@ -19,9 +19,16 @@ USERADD_PARAM:${PN} = "-u 1000 -d /home/user -m -s /bin/bash \
                       -G video,input,render,audio,dialout,seat,wheel user"
 
 # Empty password so the console login (autologin path or manual) works out of
-# the box, matching the existing empty-root-password dev posture in EXTRA_IMAGE_FEATURES.
-pkg_postinst_ontarget:${PN}() {
-    passwd -d user || true
+# the box, matching the existing empty-root-password dev posture in
+# EXTRA_IMAGE_FEATURES. Runs at rootfs assembly (offline) rather than on the
+# live target: read-only-rootfs image feature rejects delayed postinsts, and
+# the rootfs is read-only at runtime so we can't rewrite /etc/shadow then
+# anyway. The shadow edit here just clears the password field for `user`,
+# matching what `passwd -d user` would do.
+pkg_postinst:${PN}() {
+    if [ -n "$D" ] && [ -e "$D/etc/shadow" ]; then
+        sed --follow-symlinks -i 's|^user:[^:]*:|user::|' "$D/etc/shadow"
+    fi
 }
 
 # The seat group is created by the seatd recipe; make sure that runs first so

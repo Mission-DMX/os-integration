@@ -13,10 +13,11 @@
 # 2. Mount the userdata partition, seed its `home/`, `var/` and `root/`
 #    subdirs from the rootfs slot on first boot, then bind-mount them
 #    onto /home, /var and /root inside $ROOTFS_DIR.
-# 3. Remount the rootfs slot read-only so an atomic A/B firmware
-#    update can never corrupt a running slot — every writable directory
-#    on the box is now either a bind mount from userdata, the etc
-#    overlay, or a tmpfs.
+# 3. The rootfs slot itself is mounted read-only by the kernel (the
+#    `ro` flag comes from CMDLINE in mdmx-grub{,-debug}.cfg and is
+#    reinforced by read_only_rootfs_hook adjusting /etc/fstab); every
+#    writable directory on the box is a bind mount from userdata or a
+#    tmpfs (/tmp, /run, /run/lock via systemd defaults).
 # 4. Move the userdata mount into $ROOTFS_DIR so 99-finish moves it
 #    across switch_root.
 
@@ -118,8 +119,8 @@ firstboot_run() {
     fi
 
     if [ ! -e /mnt/userdata/.seeded ]; then
-        msg "mdmx-firstboot: seeding /home and /var from rootfs"
-        mkdir -p /mnt/userdata/home /mnt/userdata/var
+        msg "mdmx-firstboot: seeding /home, /var and /root from rootfs"
+        mkdir -p /mnt/userdata/home /mnt/userdata/var /mnt/userdata/root
 
         # cp -a preserves ownership, timestamps, and symlinks. The trailing
         # "/." copies contents rather than the directory itself, which
@@ -128,6 +129,12 @@ firstboot_run() {
             || debug "mdmx-firstboot: /var seed produced errors (usually benign)"
         cp -a "$ROOTFS_DIR/home/." /mnt/userdata/home/ \
             || debug "mdmx-firstboot: /home seed produced errors (usually benign)"
+        # /root may not exist on all base images; skip silently if absent.
+        if [ -d "$ROOTFS_DIR/root" ]; then
+            cp -a "$ROOTFS_DIR/root/." /mnt/userdata/root/ \
+                || debug "mdmx-firstboot: /root seed produced errors (usually benign)"
+        fi
+        chmod 0700 /mnt/userdata/root
 
         # Fallback motd in case user-init.service hasn't run yet.
         if [ ! -e /mnt/userdata/var/motd ]; then
@@ -138,13 +145,15 @@ firstboot_run() {
         sync
     fi
 
-    # Bind /home and /var from userdata onto the rootfs. The rootfs's
-    # own /home and /var become hidden but keep their inodes (only visible
-    # if the bind is undone), so nothing is destroyed.
+    # Bind /home, /var and /root from userdata onto the rootfs. The
+    # rootfs's own copies become hidden but keep their inodes (only
+    # visible if the bind is undone), so nothing is destroyed.
     mount --bind /mnt/userdata/home "$ROOTFS_DIR/home" \
         || fatal "mdmx-firstboot: failed to bind-mount /home"
     mount --bind /mnt/userdata/var "$ROOTFS_DIR/var" \
         || fatal "mdmx-firstboot: failed to bind-mount /var"
+    mount --bind /mnt/userdata/root "$ROOTFS_DIR/root" \
+        || fatal "mdmx-firstboot: failed to bind-mount /root"
 
     # Move the underlying userdata mount into the rootfs so
     # 99-finish's `mount --move` catch-all also carries it across

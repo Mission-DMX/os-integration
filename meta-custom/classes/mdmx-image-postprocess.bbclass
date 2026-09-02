@@ -44,4 +44,18 @@ mdmx_motd_symlink () {
     ln -sf /var/motd ${IMAGE_ROOTFS}${sysconfdir}/motd
 }
 
-ROOTFS_POSTPROCESS_COMMAND:append = " mdmx_install_initrd; mdmx_motd_symlink;"
+# Pre-create mount points that the running system needs to write mounts onto.
+# The rootfs is read-only at runtime (kernel boots with `ro`), so any mkdir
+# attempted after switch_root — either by the initramfs firstboot moving
+# /mnt/userdata into the rootfs, or by systemd creating /boot/efi from the
+# fstab entry — would fail with EROFS. Creating these empty directories at
+# rootfs assembly time is a build-time write that persists into the image.
+mdmx_create_mountpoints () {
+    if [ ! -d ${IMAGE_ROOTFS} ] || [ ! -e ${IMAGE_ROOTFS}/etc/fstab ]; then
+        return
+    fi
+    install -d -m 0755 ${IMAGE_ROOTFS}/mnt/userdata
+    install -d -m 0755 ${IMAGE_ROOTFS}/boot/efi
+}
+
+ROOTFS_POSTPROCESS_COMMAND:append = " mdmx_install_initrd; mdmx_motd_symlink; mdmx_create_mountpoints;"

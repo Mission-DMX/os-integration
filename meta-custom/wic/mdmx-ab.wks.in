@@ -7,7 +7,7 @@
 #   Partition 4 (userdata) is created by the mdmx-firstboot initramfs
 #   module on first boot from remaining disk space.
 
-bootloader --ptable gpt --timeout=3 --configfile=mdmx-grub.cfg --append="console=ttyS0,115200 console=tty0 quiet"
+bootloader --ptable gpt --timeout=3 --configfile=mdmx-grub.cfg --append="console=ttyS0,115200 console=tty0 quiet ro"
 
 part /boot/efi --source bootimg-efi --sourceparams="loader=grub-efi,install-kernel-into-boot-dir=false" --label esp --part-name esp --active --align 1024 --fixed-size 128M --use-uuid --fstype=vfat
 

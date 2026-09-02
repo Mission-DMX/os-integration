@@ -309,8 +309,16 @@ write_desktop(
 PYEOF
 
     # Show file / project cache paths the editor writes to at runtime.
-    install -d -m 0777 ${D}/usr/local/share/missionDMX
+    # /usr/local is on the read-only rootfs, so the show-file directory has
+    # to live on the userdata partition; /var is bind-mounted from userdata
+    # by mdmx-firstboot. The initial (empty) dir is created in the rootfs's
+    # /var and gets seeded onto userdata on first boot. A compatibility
+    # symlink at /usr/local/share/missionDMX -> /var/lib/missionDMX keeps
+    # any hard-coded editor references working.
+    install -d -m 0777 ${D}/var/lib/missionDMX
     install -d -m 0777 ${D}/var/cache/missionDMX
+    install -d ${D}/usr/local/share
+    ln -s /var/lib/missionDMX ${D}/usr/local/share/missionDMX
 }
 
 FILES:${PN} = " \
@@ -318,6 +326,7 @@ FILES:${PN} = " \
     ${datadir}/applications/mission-dmx.desktop \
     ${datadir}/icons/hicolor/256x256/apps/mdmx-editor.png \
     /usr/local/share/missionDMX \
+    /var/lib/missionDMX \
     /var/cache/missionDMX \
 "
 
