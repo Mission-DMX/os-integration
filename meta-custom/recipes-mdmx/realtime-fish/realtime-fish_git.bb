@@ -9,8 +9,6 @@ SRC_URI = "gitsm://github.com/Mission-DMX/realtime-fish.git;protocol=https;branc
 SRCREV = "56f0e68b708e7e9ca3626e1aa146c2ba19d2a909"
 PV = "0.1+git${SRCPV}"
 
-S = "${WORKDIR}/git"
-
 # The upstream .gitmodules file references some submodules over SSH
 # (git@github.com: / ssh://git@github.com/), which requires SSH
 # credentials configured on every builder. Rewrite those to anonymous

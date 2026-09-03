@@ -1,6 +1,6 @@
 .PHONY: run debug build build-debug clean reset-nvram reset-disk
 
-POKY_DIR := poky
+OE_CORE_DIR := openembedded-core
 BUILD_DIR := build
 
 # Bridge on the host that qemu should attach the guest NIC to.
@@ -28,7 +28,7 @@ QEMU_DISK_SIZE ?= 64G
 
 $(BUILD_DIR)/init:
 	echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns || echo "WARN: User NS was not explicetly enabled."
-	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR)"
+	bash -c "cd $(OE_CORE_DIR) && source oe-init-build-env ../$(BUILD_DIR)"
 	rm build/conf/local.conf
 	rm build/conf/bblayers.conf
 	touch $(BUILD_DIR)/init
@@ -40,14 +40,14 @@ build/conf/local.conf: config/local.conf
 	cp config/local.conf build/conf/local.conf
 
 build: $(BUILD_DIR)/init build/conf/local.conf build/conf/bblayers.conf
-	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake core-image-minimal"
+	bash -c "cd $(OE_CORE_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake core-image-minimal"
 	xz -f -9 --keep build/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.wic
 
 # Produce a WIC that bakes `nokaslr` into GRUB's kernel cmdline so the
 # qemu gdb stub can find kernel symbols reliably. Overrides WKS_FILE
 # via the environment for a single bitbake invocation.
 build-debug: $(BUILD_DIR)/init build/conf/local.conf build/conf/bblayers.conf
-	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && WKS_FILE=mdmx-ab-debug.wks.in bitbake core-image-minimal"
+	bash -c "cd $(OE_CORE_DIR) && source oe-init-build-env ../$(BUILD_DIR) && WKS_FILE=mdmx-ab-debug.wks.in bitbake core-image-minimal"
 
 clean:
 	rm -rf $(BUILD_DIR)
@@ -126,5 +126,5 @@ debug: $(NVRAM) $(QEMU_DISK)
 	-s -S
 
 kernel-config:
-	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake -c menuconfig virtual/kernel && bitbake -c savedefconfig virtual/kernel"
+	bash -c "cd $(OE_CORE_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake -c menuconfig virtual/kernel && bitbake -c savedefconfig virtual/kernel"
 	echo "Please copy generated kernel config (see above) to meta-custom/recipes-kernel/linux/files/defconfig"

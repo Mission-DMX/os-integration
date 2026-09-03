@@ -1,15 +1,24 @@
-[submodule "poky"]
-	path = poky
-	url = https://git.yoctoproject.org/poky
+[submodule "bitbake"]
+	path = bitbake
+	url = https://git.openembedded.org/bitbake
+	branch = 2.18
+[submodule "openembedded-core"]
+	path = openembedded-core
+	url = https://git.openembedded.org/openembedded-core
+	branch = wrynose
+[submodule "meta-yocto"]
+	path = meta-yocto
+	url = https://git.yoctoproject.org/meta-yocto
+	branch = wrynose
 [submodule "meta-openembedded"]
 	path = meta-openembedded
 	url = https://git.openembedded.org/meta-openembedded
-	branch = walnascar
+	branch = wrynose
 [submodule "meta-wayland"]
 	path = meta-wayland
 	url = https://codeberg.org/flk/meta-wayland.git
-	branch = walnascar
+	branch = wrynose
 [submodule "meta-intel"]
 	path = meta-intel
 	url = https://git.yoctoproject.org/meta-intel
-	branch = walnascar
+	branch = wrynose

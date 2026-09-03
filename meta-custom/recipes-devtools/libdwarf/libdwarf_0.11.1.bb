@@ -9,8 +9,6 @@ SRC_URI = "git://github.com/davea42/libdwarf-code.git;protocol=https;branch=main
 SRCREV = "c7b6535ce28850db00877c069af137cfa6ff5bf7"
 PV = "0.11.1"
 
-S = "${WORKDIR}/git"
-
 DEPENDS = "zlib zstd"
 
 inherit cmake pkgconfig

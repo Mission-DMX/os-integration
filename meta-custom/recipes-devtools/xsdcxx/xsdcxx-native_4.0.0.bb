@@ -25,7 +25,7 @@ NO_GENERIC_LICENSE[FLOSSE] = "FLOSSE"
 SRC_URI = "https://www.codesynthesis.com/download/xsd/4.0/linux-gnu/x86_64/xsd-4.0.0-x86_64-linux-gnu.tar.bz2"
 SRC_URI[sha256sum] = "d01060cbf4b3a1e462a5c5ad1a5a6773b541766dbbb98e50c9efb8f2a2dd55b7"
 
-S = "${WORKDIR}/xsd-4.0.0-x86_64-linux-gnu"
+S = "${UNPACKDIR}/xsd-4.0.0-x86_64-linux-gnu"
 
 inherit native
 

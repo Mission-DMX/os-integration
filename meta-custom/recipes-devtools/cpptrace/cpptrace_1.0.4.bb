@@ -9,8 +9,6 @@ SRC_URI = "git://github.com/jeremy-rifkin/cpptrace.git;protocol=https;branch=mai
 SRCREV = "3db8da80111171c219ab5839905771386bee06b3"
 PV = "1.0.4"
 
-S = "${WORKDIR}/git"
-
 DEPENDS = "libdwarf zlib zstd"
 
 inherit cmake

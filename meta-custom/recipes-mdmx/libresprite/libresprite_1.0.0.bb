@@ -19,8 +19,6 @@ SRC_URI[pref.xml.sha256sum] = "da9afb9e4f6babdde7c062ea1ed7803cec5b211b4dc8837d5
 SRCREV = "f06050a6227470cc6450a912a0748f6db7ae83a7"
 PV = "1.0.0+git${SRCPV}"
 
-S = "${WORKDIR}/git"
-
 DEPENDS = " \
     cmake-native \
     ninja-native \

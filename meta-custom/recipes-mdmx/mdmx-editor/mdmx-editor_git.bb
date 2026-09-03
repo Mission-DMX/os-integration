@@ -15,8 +15,6 @@ SRC_URI = "gitsm://github.com/Mission-DMX/Project-Editor.git;protocol=https;bran
 SRCREV = "8cf57d94d6d5a4e7ec1a6dd54569d101176c9c77"
 PV = "1.3.0+git${SRCPV}"
 
-S = "${WORKDIR}/git"
-
 # The generated mission-dmx.desktop declares
 # MimeType=application/x-mdmx-showfile — Yocto's QA insists on
 # mime-xdg to wire desktop-database and mime-database updates into
