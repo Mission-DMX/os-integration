@@ -5,7 +5,7 @@
     "spacing": 4,
     "modules-left": ["custom/launcher", "sway/workspaces", "sway/mode"],
     "modules-center": ["sway/window"],
-    "modules-right": ["custom/fish", "cpu", "memory", "clock"],
+    "modules-right": ["custom/fish", "cpu", "memory", "clock", "custom/power"],
     "sway/workspaces": {
         "disable-scroll": true,
         "all-outputs": false
@@ -36,5 +36,11 @@
     "clock": {
         "format": "{:%Y-%m-%d %H:%M:%S}",
         "interval": 1
+    },
+    "custom/power": {
+        "format": " ⏻ ",
+        "tooltip": true,
+        "tooltip-format": "Lock, reboot or shut down",
+        "on-click": "swaymsg exec /usr/bin/console-menu"
     }
 }

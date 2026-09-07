@@ -1,0 +1,20 @@
+// Allow the unprivileged `user` account (uid 1000, running sway from a
+// system service) to power off / reboot the machine. sway.service isn't
+// started through pam_systemd, so the user has no logind session and
+// the default logind policy would deny these actions with "There's no
+// active session" — hence the explicit override here.
+polkit.addRule(function(action, subject) {
+    if (subject.user !== "user") {
+        return null;
+    }
+    switch (action.id) {
+        case "org.freedesktop.login1.power-off":
+        case "org.freedesktop.login1.power-off-multiple-sessions":
+        case "org.freedesktop.login1.power-off-ignore-inhibit":
+        case "org.freedesktop.login1.reboot":
+        case "org.freedesktop.login1.reboot-multiple-sessions":
+        case "org.freedesktop.login1.reboot-ignore-inhibit":
+            return polkit.Result.YES;
+    }
+    return null;
+});

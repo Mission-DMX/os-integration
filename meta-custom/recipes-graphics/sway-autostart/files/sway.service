@@ -32,7 +32,18 @@ StandardError=journal
 TTYPath=/dev/tty1
 TTYVHangup=yes
 TTYVTDisallocate=yes
-ExecStart=/usr/bin/dbus-run-session -- /usr/bin/sway
+# StandardInput=tty gives sway /dev/tty1 as its controlling terminal.
+# If the kernel VT is ever momentarily in KD_TEXT (before seatd flips it
+# to KD_GRAPHICS, on a VT swap, on a wlroots renderer glitch, etc.), the
+# tty line discipline turns a Ctrl-C keypress into SIGINT delivered to
+# the tty1 foreground process group — which is sway. Default SIGINT
+# action is termination, so pressing Ctrl-C inside a foot terminal has
+# been observed to take down the whole session. Ignoring SIGINT (and
+# SIGQUIT, same story via Ctrl-\) via `trap ""` before exec sets the
+# disposition to SIG_IGN; POSIX preserves SIG_IGN across exec, so sway
+# inherits it. Children (foot's shell, waybar, …) install their own
+# handlers and so remain interruptible normally.
+ExecStart=/bin/sh -c 'trap "" INT QUIT; exec /usr/bin/dbus-run-session -- /usr/bin/sway'
 Restart=on-failure
 RestartSec=5
 

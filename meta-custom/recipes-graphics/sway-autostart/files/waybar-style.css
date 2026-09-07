@@ -60,6 +60,22 @@ window#waybar {
     background-color: #4a63d6;
 }
 
+#custom-power {
+    background-color: #b34747;
+    color: #ffffff;
+    font-size: 18px;
+    font-weight: bold;
+    min-width: 44px;
+    padding: 0 14px;
+    margin: 4px 4px 4px 8px;
+    border-radius: 6px;
+}
+
+#custom-power:hover,
+#custom-power:active {
+    background-color: #d15a5a;
+}
+
 #clock {
     color: #a0d8ff;
 }
