@@ -161,13 +161,29 @@ do_compile() {
 
     # Bootstrap pdm into a scratch dir; --target is a flat drop and
     # bypasses sysconfig, so it doesn't hit the STAGING_LIBDIR bug.
+    #
+    # pdm is pinned <2.29: from 2.29 onwards `pdm export` auto-creates a
+    # virtualenv when its findpython discovery can't match the project's
+    # requires-python (`==3.13.*`) against a PATH candidate. python3-native
+    # is not on PATH (python_venv_env scrubs it), so pdm misses it even
+    # though the current interpreter *is* 3.13.4, then virtualenv's
+    # sanity-check exec of the venv python fails because Yocto's uninative
+    # LD_LIBRARY_PATH isn't in scope. Older pdm just uses the current
+    # interpreter and skips the whole discovery/venv dance.
     ${STAGING_BINDIR_NATIVE}/python3-native/python3 -m pip install \
-        --no-cache-dir --target ${S}/.pdm-runner pdm
+        --no-cache-dir --target ${S}/.pdm-runner 'pdm<2.29'
 
     # Translate pdm.lock into a plain requirements.txt via pdm's own
     # resolver output. `-G build` opts the [dependency-groups.build]
     # entries (Nuitka, patchelf) in alongside the default project deps.
+    #
+    # PDM_PYTHON forces pdm to skip findpython discovery and use the
+    # interpreter it's already running under; PDM_PYTHON_USE_VENV=false
+    # blocks the auto-venv behavior described above as a belt-and-braces
+    # measure in case the pin above ever slips.
     PYTHONPATH="${S}/.pdm-runner" \
+    PDM_PYTHON="${STAGING_BINDIR_NATIVE}/python3-native/python3" \
+    PDM_PYTHON_USE_VENV=false \
         ${STAGING_BINDIR_NATIVE}/python3-native/python3 -m pdm export \
             --format requirements \
             --without-hashes \

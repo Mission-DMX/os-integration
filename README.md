@@ -72,3 +72,22 @@ lands.
 
 ## Important
 Revert sway.service pixman renderer once debugging on a non-Nvidia host.
+
+## Known upstream quirks
+### `mdmx-editor` — pdm pin
+`meta-custom/recipes-mdmx/mdmx-editor/mdmx-editor_git.bb` bootstraps `pdm`
+at build time to translate `pdm.lock` into a `pip`-consumable
+`requirements.txt`. The install is pinned to `pdm<2.29` and additionally
+runs with `PDM_PYTHON=${STAGING_BINDIR_NATIVE}/python3-native/python3` and
+`PDM_PYTHON_USE_VENV=false`.
+
+pdm 2.29 changed `pdm export` to auto-create a `virtualenv` when its
+`findpython` discovery can't match the project's `requires-python`
+(`==3.13.*`) against a PATH candidate. Our recipe scrubs PATH down to
+host system dirs, so `python3-native` — which *is* the running
+interpreter and *is* Python 3.13 — is invisible to findpython. pdm then
+spins up a venv whose Python fails its own sanity-check exec because
+Yocto's uninative `LD_LIBRARY_PATH` isn't in scope for it, and
+`do_compile` dies with a misleading `CalledProcessError` on the venv
+Python. The two env vars force pdm to reuse the current interpreter and
+skip the venv path even if the version pin is ever relaxed.
