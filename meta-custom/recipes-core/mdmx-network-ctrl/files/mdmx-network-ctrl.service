@@ -1,0 +1,17 @@
+[Unit]
+Description=MissionDMX DBus network configuration daemon
+Requires=dbus.socket
+After=dbus.socket systemd-networkd.service
+Wants=systemd-networkd.service systemd-resolved.service
+
+[Service]
+Type=dbus
+BusName=org.mission_dmx.networking_ctrl
+ExecStart=/usr/bin/mdmx-network-ctrl
+Restart=on-failure
+RestartSec=2
+# Needs root to write /run/systemd/network and restart systemd-networkd.
+User=root
+
+[Install]
+WantedBy=multi-user.target
