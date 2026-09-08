@@ -1,0 +1,52 @@
+#!/bin/sh
+# mdmx-updater install helper. Invoked by the console menu as
+# `pkexec /usr/libexec/mdmx-updater/mdmx-updater-install` — a polkit rule
+# (see 50-mdmx-updater.rules) allows this exact command to run without a
+# password prompt for the `user` account.
+#
+# The helper is intentionally tiny: it reads the pending marker written
+# by mdmx-updater.py, resolves the bundle path, and hands off to `rauc
+# install`. That way anything RAUC does (slot selection, verity mount,
+# grubenv update, post-install boot arrangement) stays in RAUC's court;
+# we never touch grubenv or the slot devices directly from here.
+#
+# Runs as root under pkexec — the environment is scrubbed by polkit, so
+# HOME/USER come from PKEXEC_UID, not from the launching shell. Look up
+# the pending marker under that user's home explicitly.
+
+set -eu
+
+if [ -z "${PKEXEC_UID:-}" ]; then
+    echo "mdmx-updater-install: refusing to run outside pkexec" >&2
+    exit 1
+fi
+
+# getent so this survives a rename of the desktop user later.
+user_row=$(getent passwd "$PKEXEC_UID" || true)
+if [ -z "$user_row" ]; then
+    echo "mdmx-updater-install: no passwd entry for uid $PKEXEC_UID" >&2
+    exit 1
+fi
+
+user_home=$(printf '%s\n' "$user_row" | cut -d: -f6)
+pending="$user_home/.cache/mdmx-updater/pending.json"
+
+if [ ! -f "$pending" ]; then
+    echo "mdmx-updater-install: no pending update at $pending" >&2
+    exit 2
+fi
+
+# python3 is already in the image (console-lock depends on it) and gives
+# us a safer JSON reader than an ad-hoc sed/awk parse of the marker.
+bundle=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['bundle_path'])" "$pending")
+
+if [ ! -f "$bundle" ]; then
+    echo "mdmx-updater-install: bundle missing at $bundle" >&2
+    exit 3
+fi
+
+echo "mdmx-updater-install: installing $bundle"
+# RAUC handles verify (against /etc/rauc/mdmx-keyring.pem), slot pick,
+# extract, and grubenv marking. On success the target reboots into the
+# new slot on the next boot.
+exec /usr/bin/rauc install "$bundle"

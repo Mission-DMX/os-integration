@@ -27,12 +27,30 @@ if pgrep -x fuzzel >/dev/null 2>&1; then
     sleep 0.1
 fi
 
-choice=$(printf '%s\n' \
-    "Lock Screen" \
-    "Change PIN" \
-    "Reboot" \
-    "Shutdown" \
-    "Cancel" \
+# mdmx-updater writes ~/.cache/mdmx-updater/pending.json after a
+# successful download+verify. Show the install entry only when that
+# marker is present, so the menu doesn't advertise an action that would
+# immediately fail with "no pending update".
+UPDATE_MARKER="${HOME:-/home/user}/.cache/mdmx-updater/pending.json"
+
+entries="Lock Screen
+Change PIN"
+if [ -f "$UPDATE_MARKER" ]; then
+    ts=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('build_timestamp',''))" "$UPDATE_MARKER" 2>/dev/null || true)
+    if [ -n "$ts" ]; then
+        entries="$entries
+Install Update ($ts)"
+    else
+        entries="$entries
+Install Update"
+    fi
+fi
+entries="$entries
+Reboot
+Shutdown
+Cancel"
+
+choice=$(printf '%s\n' "$entries" \
   | /usr/bin/fuzzel --dmenu \
         --config=/etc/console-menu/fuzzel.ini \
         --prompt='> ')
@@ -45,6 +63,14 @@ case "$choice" in
         ;;
     "Change PIN")
         exec /usr/bin/console-lock --change-pin
+        ;;
+    "Install Update"*)
+        log "update install requested"
+        # pkexec drops the user through a polkit rule (see
+        # 50-mdmx-updater.rules) that whitelists this exact program for
+        # `user`, no password prompt. The helper itself reads the
+        # pending marker and calls `rauc install`.
+        exec /usr/bin/pkexec /usr/libexec/mdmx-updater/mdmx-updater-install
         ;;
     "Reboot")
         log "reboot requested"

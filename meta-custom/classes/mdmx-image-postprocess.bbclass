@@ -7,7 +7,9 @@
 #   1. Copies the deployed initramfs cpio.gz into /boot/initrd inside the
 #      rootfs so GRUB can load it via `initrd /boot/initrd` from the
 #      selected slot's rootfs. Skipped for the initramfs image itself
-#      (no /boot directory there).
+#      (PN == INITRAMFS_IMAGE) — the cpio.gz doesn't exist yet during
+#      its own do_rootfs, and shipping an initrd inside an initrd would
+#      be circular anyway.
 #   2. Replaces the plain /etc/motd shipped by base-files with a symlink
 #      to /var/motd. /var is bind-mounted from the userdata partition
 #      by the initramfs firstboot module, so the MOTD survives firmware
@@ -24,7 +26,18 @@ DEPENDS:append = " mdmx-grubenv"
 do_image_wic[depends] += "mdmx-grubenv:do_deploy"
 
 mdmx_install_initrd () {
-    # Skip when this image has no /boot (initramfs, minimal container images).
+    # Never install the initrd into the initramfs image itself — the
+    # cpio.gz being packaged doesn't exist yet during our own do_rootfs
+    # (we're the recipe that produces it), and shipping an initrd inside
+    # an initrd is nonsensical anyway. Earlier this was gated on
+    # "no /boot dir", but something in the initramfs's package set now
+    # creates an empty /boot which trips that heuristic and produces a
+    # spurious warning. Keying off PN is exact.
+    if [ "${PN}" = "${INITRAMFS_IMAGE}" ]; then
+        return
+    fi
+    # Some minimal container images also lack /boot; keep the fallback
+    # check so we don't try to install into a nonexistent directory.
     if [ ! -d ${IMAGE_ROOTFS}/boot ]; then
         return
     fi
@@ -58,4 +71,31 @@ mdmx_create_mountpoints () {
     install -d -m 0755 ${IMAGE_ROOTFS}/boot/efi
 }
 
-ROOTFS_POSTPROCESS_COMMAND:append = " mdmx_install_initrd; mdmx_motd_symlink; mdmx_create_mountpoints;"
+# Stamp the rootfs with its build timestamp. mdmx-updater on the target
+# reads /etc/mdmx-build-timestamp and compares it against build_timestamp
+# entries in the update server's manifest.json — anything strictly newer
+# is a candidate for download. The lexical YYYYMMDDhhmmss format (matches
+# bitbake's DATETIME) sorts identically to chronological order, so the
+# comparison is a plain string test on both sides.
+#
+# The same value is also emitted as a deploy-dir sidecar so
+# `make publish` can pick it up without having to peek inside the ext4;
+# without the sidecar the publish flow would need `debugfs` (or worse, a
+# root mount) to recover it, which we'd rather not require on the host.
+# Skipped for images with no /etc (initramfs, minimal images).
+mdmx_write_build_timestamp () {
+    if [ ! -d ${IMAGE_ROOTFS}${sysconfdir} ]; then
+        return
+    fi
+    printf '%s\n' "${DATETIME}" > ${IMAGE_ROOTFS}${sysconfdir}/mdmx-build-timestamp
+    chmod 0644 ${IMAGE_ROOTFS}${sysconfdir}/mdmx-build-timestamp
+
+    install -d ${DEPLOY_DIR_IMAGE}
+    printf '%s\n' "${DATETIME}" > ${DEPLOY_DIR_IMAGE}/mdmx-build-timestamp
+}
+# DATETIME resolves per-task, so exclude it from vardeps — otherwise
+# every wall-clock tick would appear as a signature change and burn the
+# rootfs sstate cache without reason.
+mdmx_write_build_timestamp[vardepsexclude] = "DATETIME"
+
+ROOTFS_POSTPROCESS_COMMAND:append = " mdmx_install_initrd; mdmx_motd_symlink; mdmx_create_mountpoints; mdmx_write_build_timestamp;"

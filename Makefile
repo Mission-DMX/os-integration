@@ -1,7 +1,10 @@
-.PHONY: run debug build build-debug clean reset-nvram reset-disk
+.PHONY: run debug build build-debug build-bundle sign publish clean reset-nvram reset-disk
 
 POKY_DIR := poky
 BUILD_DIR := build
+DEPLOY_DIR := $(BUILD_DIR)/tmp/deploy/images/qemux86-64
+UPDATES_DIR := $(BUILD_DIR)/updates
+KEYS_DIR := keys/signing
 
 # Bridge on the host that qemu should attach the guest NIC to.
 BRIDGE ?= virbr0
@@ -39,15 +42,49 @@ build/conf/bblayers.conf: config/bblayers.conf
 build/conf/local.conf: config/local.conf
 	cp config/local.conf build/conf/local.conf
 
-build: $(BUILD_DIR)/init build/conf/local.conf build/conf/bblayers.conf
+build: $(BUILD_DIR)/init build/conf/local.conf build/conf/bblayers.conf $(KEYS_DIR)/trust-bundle.pem
 	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake core-image-minimal"
 	xz -f -9 --keep build/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.wic
+
+# The RAUC bundle recipe (mdmx-rauc-bundle) packages the just-built
+# rootfs into a verity-format .raucb signed with the classical RSA key
+# from sign-images.sh. Keep as a separate target — the bundle only
+# makes sense in publish flows, and dragging it into every `make build`
+# would double the wall-clock cost of a routine test cycle.
+build-bundle: build
+	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake mdmx-rauc-bundle"
 
 # Produce a WIC that bakes `nokaslr` into GRUB's kernel cmdline so the
 # qemu gdb stub can find kernel symbols reliably. Overrides WKS_FILE
 # via the environment for a single bitbake invocation.
-build-debug: $(BUILD_DIR)/init build/conf/local.conf build/conf/bblayers.conf
+build-debug: $(BUILD_DIR)/init build/conf/local.conf build/conf/bblayers.conf $(KEYS_DIR)/trust-bundle.pem
 	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && WKS_FILE=mdmx-ab-debug.wks.in bitbake core-image-minimal"
+
+# Bootstrap dev signing material and stage the trust bundle where the
+# rauc-conf.bbappend expects it. `build` depends on this so the first
+# clean build doesn't fail with "keyring not staged". --stage-keyring
+# generates keys if missing and copies the trust bundle into the recipe
+# files/ directory without touching signature files (which don't exist
+# yet on a fresh checkout).
+$(KEYS_DIR)/trust-bundle.pem:
+	./sign-images.sh --stage-keyring
+
+# Sign the built artifacts (factory WIC, update ext4, RAUC bundle) with
+# the hybrid RSA-4096 + ML-DSA-65 CMS scheme and stage the keyring for
+# meta-rauc's rauc-conf. Idempotent — skips work when signatures are
+# already fresh.
+sign: build-bundle
+	./sign-images.sh
+
+# Assemble build/updates/ from the signed RAUC bundle(s) and a
+# manifest.json keyed on /etc/mdmx-build-timestamp. The directory can
+# be rsync'd 1:1 onto the update server's document root — no path
+# rewriting needed.
+publish: sign
+	python3 scripts/publish-updates.py \
+	    --deploy-dir $(DEPLOY_DIR) \
+	    --updates-dir $(UPDATES_DIR) \
+	    --trust-bundle $(KEYS_DIR)/trust-bundle.pem
 
 clean:
 	rm -rf $(BUILD_DIR)

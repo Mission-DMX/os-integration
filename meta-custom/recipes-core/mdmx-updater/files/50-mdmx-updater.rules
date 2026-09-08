@@ -1,0 +1,13 @@
+// Allow the desktop `user` account to run the mdmx-updater install
+// helper via pkexec without an authentication prompt. The helper only
+// hands the pending bundle to `rauc install`, which itself verifies the
+// embedded CMS signature — so the effective privilege granted is
+// "install a bundle that we already downloaded and verified against the
+// on-device RAUC keyring". No arbitrary command execution.
+polkit.addRule(function (action, subject) {
+    if (action.id === "org.freedesktop.policykit.exec"
+        && action.lookup("program") === "/usr/libexec/mdmx-updater/mdmx-updater-install"
+        && subject.user === "user") {
+        return polkit.Result.YES;
+    }
+});

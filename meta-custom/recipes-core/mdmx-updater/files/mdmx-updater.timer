@@ -1,0 +1,16 @@
+[Unit]
+Description=MissionDMX update check schedule
+
+[Timer]
+# One shot 10 min after boot to give the console a chance to notice an
+# available update before the operator sits down, and every 6 h after
+# that. RandomizedDelaySec smears the fleet's traffic so a synchronised
+# fleet reboot doesn't hammer the update server on the minute mark.
+OnBootSec=10min
+OnUnitActiveSec=6h
+RandomizedDelaySec=15min
+Persistent=yes
+Unit=mdmx-updater.service
+
+[Install]
+WantedBy=timers.target

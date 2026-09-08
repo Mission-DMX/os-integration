@@ -1,4 +1,5 @@
 build/
 .idea
 keys/
+meta-custom/recipes-core/rauc/files/mdmx-keyring.pem
 

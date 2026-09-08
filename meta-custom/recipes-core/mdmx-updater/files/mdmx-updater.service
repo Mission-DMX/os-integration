@@ -1,0 +1,42 @@
+[Unit]
+Description=MissionDMX OS update checker
+Documentation=man:rauc(1)
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
+# time-sync gate: without a correct wall clock the openssl signature
+# check would reject valid certs as not-yet-valid; wait for chronyd or
+# systemd-timesyncd to settle before hitting the network.
+
+[Service]
+Type=oneshot
+User=user
+Group=user
+# HOME is set implicitly from User= so the script can find
+# ~/.config/console-settings.ini.
+ExecStart=/usr/bin/mdmx-updater
+# Never restart; the timer decides when to try again. A failed
+# manifest fetch or transient DNS blip should not turn into a hot loop.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+# Hardening (best effort — reads/writes under /home/user/.cache, invokes
+# openssl, hits the network, so most of the paranoia knobs still apply).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/user/.cache
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
