@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Document Viewer
+GenericName=Document Viewer
+Comment=View PDF, Markdown, and RTF documents
+Exec=mdmx-docviewer %F
+Terminal=false
+NoDisplay=true
+Categories=Office;Viewer;
+MimeType=application/pdf;text/markdown;text/x-markdown;application/rtf;text/rtf;

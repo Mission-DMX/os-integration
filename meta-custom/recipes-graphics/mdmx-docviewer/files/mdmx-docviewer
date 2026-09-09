@@ -1,0 +1,451 @@
+#!/usr/bin/env python3
+"""
+Minimal document viewer for PDF, Markdown, and RTF.
+
+Registered as the XDG default handler for application/pdf, text/markdown,
+application/rtf and text/rtf. Not shown in launchers (NoDisplay=true) —
+invoked from other applications via xdg-open / gio-open.
+
+Design goals:
+- No WebKit / no browser: cannot afford the dep tree on this image.
+- No RTF library: none is packaged; we ship a small pure-Python parser
+  that covers the formatting our operator-facing scene notes use
+  (bold / italic / underline / paragraphs / basic Unicode escapes).
+- PDF via Poppler-GLib (already built with GI in this Yocto).
+- Markdown rendered by a tiny MD-subset-to-Pango-markup translator
+  rather than round-tripping through HTML, because there is no HTML
+  widget available either.
+"""
+
+import re
+import signal
+import sys
+from html import escape
+from pathlib import Path
+
+import gi
+
+gi.require_version("Gdk", "3.0")
+gi.require_version("Gtk", "3.0")
+gi.require_version("Pango", "1.0")
+gi.require_version("Poppler", "0.18")
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango, Poppler  # noqa: E402
+import cairo  # noqa: E402
+
+
+# ---------------------------------------------------------------- format probe
+
+
+def detect_kind(path: Path) -> str:
+    """Sniff by magic bytes first, fall back to extension."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(8)
+    except OSError:
+        head = b""
+    if head.startswith(b"%PDF-"):
+        return "pdf"
+    if head.startswith(b"{\\rtf"):
+        return "rtf"
+    suffix = path.suffix.lower()
+    if suffix in {".rtf"}:
+        return "rtf"
+    if suffix in {".md", ".markdown", ".mkd", ".mdown"}:
+        return "md"
+    # Unknown text: render as markdown so plain text still shows readably.
+    return "md"
+
+
+# --------------------------------------------------------------------- PDF ---
+
+
+def render_pdf(path: Path) -> Gtk.Widget:
+    uri = path.absolute().as_uri()
+    doc = Poppler.Document.new_from_file(uri, None)
+
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    box.set_margin_top(8)
+    box.set_margin_bottom(8)
+    box.set_margin_start(8)
+    box.set_margin_end(8)
+
+    # ~144 dpi: readable on the 1080p touch panel without pre-rendering
+    # every page to a huge surface up front.
+    scale = 1.5
+    for i in range(doc.get_n_pages()):
+        page = doc.get_page(i)
+        w_pt, h_pt = page.get_size()
+        pw, ph = int(w_pt * scale), int(h_pt * scale)
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, pw, ph)
+        ctx = cairo.Context(surface)
+        # Paint white first — PDFs with a transparent page background
+        # otherwise render onto the ARGB surface's zeroed (=black) pixels.
+        ctx.set_source_rgb(1, 1, 1)
+        ctx.paint()
+        ctx.scale(scale, scale)
+        page.render(ctx)
+
+        pixbuf = Gdk.pixbuf_get_from_surface(surface, 0, 0, pw, ph)
+        img = Gtk.Image.new_from_pixbuf(pixbuf)
+        frame = Gtk.Frame()
+        frame.add(img)
+        frame.set_halign(Gtk.Align.CENTER)
+        box.pack_start(frame, False, False, 0)
+    return box
+
+
+# ---------------------------------------------------------------- Markdown ---
+
+_MD_HEADING_SIZES = {
+    1: "xx-large",
+    2: "x-large",
+    3: "large",
+    4: "medium",
+    5: "medium",
+    6: "small",
+}
+
+
+def md_to_pango(text: str) -> str:
+    """
+    Translate a Markdown subset (headings, bold, italic, inline code, fenced
+    code, unordered/ordered lists, blockquotes, hr) into Pango markup. Any
+    unrecognised markdown falls through as escaped plain text.
+    """
+    out: list[str] = []
+    in_code = False
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            out.append("</tt>" if in_code else "<tt>")
+            in_code = not in_code
+            continue
+        if in_code:
+            out.append(escape(raw))
+            continue
+
+        line = escape(raw)
+
+        m = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if m:
+            level = len(m.group(1))
+            size = _MD_HEADING_SIZES[level]
+            out.append(f'<span size="{size}" weight="bold">{m.group(2)}</span>')
+            continue
+
+        if re.match(r"^\s*(-{3,}|_{3,}|\*{3,})\s*$", line):
+            out.append('<span foreground="gray">──────────────────────────────</span>')
+            continue
+
+        # Blockquote: "> "  (escape() has already turned '>' into '&gt;')
+        if re.match(r"^\s*&gt;\s?", line):
+            line = re.sub(r"^\s*&gt;\s?", "", line)
+            line = f'<span foreground="#666">▍ {line}</span>'
+
+        m = re.match(r"^(\s*)[-*+]\s+(.*)$", line)
+        if m:
+            indent = "    " * (len(m.group(1)) // 2)
+            line = f"{indent}• {m.group(2)}"
+        else:
+            m = re.match(r"^(\s*)(\d+)\.\s+(.*)$", line)
+            if m:
+                indent = "    " * (len(m.group(1)) // 2)
+                line = f"{indent}{m.group(2)}. {m.group(3)}"
+
+        line = re.sub(r"`([^`]+)`", r"<tt>\1</tt>", line)
+        line = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", line)
+        line = re.sub(r"__([^_]+)__", r"<b>\1</b>", line)
+        line = re.sub(r"(?<!\*)\*([^*\s][^*]*?)\*(?!\*)", r"<i>\1</i>", line)
+        line = re.sub(r"(?<!_)_([^_\s][^_]*?)_(?!_)", r"<i>\1</i>", line)
+        out.append(line)
+    if in_code:
+        out.append("</tt>")
+    return "\n".join(out)
+
+
+# --------------------------------------------------------------------- RTF ---
+
+# Destination groups we skip wholesale — none of these are user-visible body
+# text, they are metadata / font/color tables / embedded objects.
+_RTF_IGNORED = {
+    "fonttbl", "colortbl", "stylesheet", "info", "header", "footer",
+    "headerl", "headerr", "footerl", "footerr", "pict", "object",
+    "nonesttables", "listtable", "listoverridetable", "rsidtbl",
+    "themedata", "colorschememapping", "datastore", "latentstyles",
+    "generator", "operator", "title", "subject", "author", "keywords",
+    "comment", "company", "category", "manager", "hlinkbase", "xmlnstbl",
+    "revtbl", "protusertbl", "userprops",
+}
+
+
+def rtf_to_pango(data: bytes | str) -> str:
+    """
+    Extract text with bold/italic/underline formatting from an RTF stream.
+    Ignores fonts/colors/paragraph geometry — this viewer only cares about
+    the semantic content of scene notes. Any content the parser can't make
+    sense of is emitted as escaped plain text, so the file is at least
+    readable rather than blank on parse failure.
+    """
+    text = data.decode("latin-1", errors="replace") if isinstance(data, bytes) else data
+    if not text.startswith("{\\rtf"):
+        return escape(text)
+
+    i = 0
+    n = len(text)
+    # Stack of (bold, italic, underline) — pushed on '{', popped on '}'.
+    stack: list[tuple[bool, bool, bool]] = [(False, False, False)]
+    skip_depth = 0  # >0 = swallow input until brace-count returns to 0
+
+    buf: list[str] = []
+    out: list[str] = []
+
+    def apply_span(seg: str) -> str:
+        b, it, ul = stack[-1]
+        s = escape(seg)
+        if ul:
+            s = f"<u>{s}</u>"
+        if it:
+            s = f"<i>{s}</i>"
+        if b:
+            s = f"<b>{s}</b>"
+        return s
+
+    def flush() -> None:
+        if buf:
+            out.append(apply_span("".join(buf)))
+            buf.clear()
+
+    while i < n:
+        c = text[i]
+
+        if skip_depth > 0:
+            if c == "{":
+                skip_depth += 1
+            elif c == "}":
+                skip_depth -= 1
+            i += 1
+            continue
+
+        if c == "\\":
+            i += 1
+            if i >= n:
+                break
+            nxt = text[i]
+            if nxt == "'":  # \'hh — CP1252 byte
+                if i + 2 < n:
+                    try:
+                        byte = int(text[i + 1 : i + 3], 16)
+                        buf.append(bytes([byte]).decode("cp1252", errors="replace"))
+                    except ValueError:
+                        pass
+                    i += 3
+                    continue
+            if nxt in "\\{}":
+                buf.append(nxt)
+                i += 1
+                continue
+            if nxt == "*":
+                # {\* ...} — destination group; discard entirely. The
+                # opening '{' already pushed a stack frame that we need to
+                # unwind, since the matching '}' will be consumed by
+                # skip_depth without going through the '}' branch below.
+                flush()
+                skip_depth = 1
+                if len(stack) > 1:
+                    stack.pop()
+                i += 1
+                continue
+            if nxt == "~":
+                buf.append(" ")
+                i += 1
+                continue
+            if nxt == "-":  # optional hyphen
+                i += 1
+                continue
+            if nxt == "_":  # non-breaking hyphen
+                buf.append("-")
+                i += 1
+                continue
+            if nxt in ("\n", "\r"):
+                buf.append("\n")
+                i += 1
+                continue
+
+            # Control word: [a-zA-Z]+ [-]?[0-9]* ' '?
+            j = i
+            while j < n and text[j].isalpha():
+                j += 1
+            word = text[i:j]
+            i = j
+            arg = ""
+            if i < n and (text[i] == "-" or text[i].isdigit()):
+                k = i
+                if text[k] == "-":
+                    k += 1
+                while k < n and text[k].isdigit():
+                    k += 1
+                arg = text[i:k]
+                i = k
+            if i < n and text[i] == " ":
+                i += 1
+
+            if not word:
+                continue
+            if word in _RTF_IGNORED:
+                flush()
+                skip_depth = 1
+                if len(stack) > 1:
+                    stack.pop()
+                continue
+            if word in ("par", "line"):
+                buf.append("\n")
+            elif word == "tab":
+                buf.append("\t")
+            elif word == "b":
+                flush()
+                _, it, ul = stack[-1]
+                stack[-1] = (arg != "0", it, ul)
+            elif word == "i":
+                flush()
+                b, _, ul = stack[-1]
+                stack[-1] = (b, arg != "0", ul)
+            elif word == "ul":
+                flush()
+                b, it, _ = stack[-1]
+                stack[-1] = (b, it, arg != "0")
+            elif word == "ulnone":
+                flush()
+                b, it, _ = stack[-1]
+                stack[-1] = (b, it, False)
+            elif word == "plain":
+                flush()
+                stack[-1] = (False, False, False)
+            elif word == "u":  # \uNNNN? — Unicode codepoint, next char is fallback
+                try:
+                    cp = int(arg) if arg else 0
+                    if cp < 0:
+                        cp += 65536
+                    buf.append(chr(cp))
+                except (ValueError, OverflowError):
+                    pass
+                if i < n and text[i] not in "\\{}":
+                    i += 1
+            # All other control words (font/color/margin/…) are ignored.
+            continue
+
+        if c == "{":
+            flush()
+            stack.append(stack[-1])
+            i += 1
+            continue
+        if c == "}":
+            flush()
+            if len(stack) > 1:
+                stack.pop()
+            i += 1
+            continue
+        if c in ("\n", "\r"):
+            # Line breaks in the RTF source are whitespace, not content.
+            i += 1
+            continue
+
+        buf.append(c)
+        i += 1
+
+    flush()
+    return "".join(out)
+
+
+# ------------------------------------------------------------------ display --
+
+
+def render_markup(markup: str) -> Gtk.Widget:
+    """Wrap Pango markup in a selectable, wrapping label."""
+    label = Gtk.Label()
+    label.set_selectable(True)
+    label.set_line_wrap(True)
+    label.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
+    label.set_xalign(0.0)
+    label.set_valign(Gtk.Align.START)
+    label.set_margin_top(12)
+    label.set_margin_bottom(12)
+    label.set_margin_start(16)
+    label.set_margin_end(16)
+    try:
+        label.set_markup(markup)
+    except Exception:
+        label.set_text(markup)
+    return label
+
+
+class Viewer(Gtk.ApplicationWindow):
+    def __init__(self, app: Gtk.Application, path: Path) -> None:
+        super().__init__(application=app, title=path.name)
+        self.set_default_size(900, 1000)
+
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+
+        kind = detect_kind(path)
+        try:
+            if kind == "pdf":
+                child = render_pdf(path)
+            elif kind == "rtf":
+                child = render_markup(rtf_to_pango(path.read_bytes()))
+            else:
+                child = render_markup(md_to_pango(path.read_text(encoding="utf-8", errors="replace")))
+        except Exception as exc:
+            child = render_markup(escape(f"Failed to open {path}: {exc}"))
+
+        scroll.add(child)
+        self.add(scroll)
+
+        accel = Gtk.AccelGroup()
+        self.add_accel_group(accel)
+        for combo in ("<Control>w", "Escape"):
+            key, mods = Gtk.accelerator_parse(combo)
+            accel.connect(key, mods, 0, lambda *_a: self.close() or True)
+
+
+class App(Gtk.Application):
+    def __init__(self) -> None:
+        super().__init__(
+            application_id="org.missiondmx.DocViewer",
+            flags=Gio.ApplicationFlags.HANDLES_OPEN | Gio.ApplicationFlags.NON_UNIQUE,
+        )
+        self.connect("open", self._on_open)
+        self.connect("activate", self._on_activate)
+
+    def _on_activate(self, _app: Gtk.Application) -> None:
+        sys.stderr.write("mdmx-docviewer: no file specified\n")
+
+    def _on_open(self, _app: Gtk.Application, files, _n: int, _hint: str) -> None:
+        for gfile in files:
+            path = gfile.get_path()
+            if not path:
+                continue
+            win = Viewer(self, Path(path))
+            win.show_all()
+
+
+def main() -> int:
+    app = App()
+
+    # GLib's main loop blocks in a C poll(), so Python's default SIGINT
+    # handler never runs and Ctrl-C on the launching terminal either
+    # tears down the process with a traceback or is swallowed entirely.
+    # Wire SIGINT (and SIGTERM, for good measure) through GLib's own
+    # signal source so it hits the main loop and gets a clean shutdown
+    # via Gtk.Application.quit().
+    def _shutdown() -> bool:
+        app.quit()
+        return GLib.SOURCE_REMOVE
+
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, _shutdown)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, _shutdown)
+
+    return app.run(sys.argv)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

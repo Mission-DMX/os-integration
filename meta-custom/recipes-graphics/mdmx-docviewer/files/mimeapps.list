@@ -1,0 +1,13 @@
+[Default Applications]
+application/pdf=mdmx-docviewer.desktop
+text/markdown=mdmx-docviewer.desktop
+text/x-markdown=mdmx-docviewer.desktop
+application/rtf=mdmx-docviewer.desktop
+text/rtf=mdmx-docviewer.desktop
+
+[Added Associations]
+application/pdf=mdmx-docviewer.desktop;
+text/markdown=mdmx-docviewer.desktop;
+text/x-markdown=mdmx-docviewer.desktop;
+application/rtf=mdmx-docviewer.desktop;
+text/rtf=mdmx-docviewer.desktop;
