@@ -23,26 +23,33 @@ S = "${WORKDIR}/git"
 # the package's postinst/postrm.
 inherit mime-xdg
 
-# python3-native gives us Python 3.13 (matching pyproject.toml). We had
-# hoped to drive the install with pdm as upstream requests, but Yocto's
-# python3-native ships a sysconfig hard-coded to STAGING_LIBDIR — every
-# venv/pdm path resolves to the recipe sysroot instead of the project's
-# .venv/. See do_compile for the full rationale; net effect is we're
-# stuck with pip + `--prefix`, which does explicitly override sysconfig.
-DEPENDS = "python3-native python3-pip-native desktop-file-utils"
+# python3-native supplies the interpreter Nuitka runs under; its
+# version tracks poky's python3 recipe, which also becomes the target's
+# python3 — so libpython versions between build and target stay in sync
+# without pinning anything to the build host. The remaining DEPENDS are
+# the system libs PySide6's Qt6 wheels dlopen during compile-time
+# introspection (glib/xcb/xkbcommon/dbus/mesa/x11/wayland/fontconfig);
+# taking them from Yocto's uninative sysroot keeps everything ABI-consistent
+# with python3-native. See do_compile for the sysconfig quirk that forces
+# `pip install --prefix` instead of pdm sync.
+DEPENDS = " \
+    python3-native \
+    python3-pip-native \
+    desktop-file-utils \
+    glib-2.0-native \
+    libxkbcommon-native \
+    libxcb-native \
+    dbus-native \
+    mesa-native \
+    libx11-native \
+    wayland-native \
+    fontconfig-native \
+"
 
-# BUILD HOST REQUIREMENTS (Debian/Ubuntu — installed via apt):
-#   python3.13          — Nuitka's cc compiles a binary that dlopens the
-#                         host libpython3.13.so.1.0 at runtime.
-#   python3.13-dev      — Nuitka needs Python.h to compile the generated
-#                         C code (even with --static-libpython=no).
-#   libglib2.0-0        — dlopen'd by Qt6 during pyside6-deploy's
-#                         compile-time introspection.
-#   libxkbcommon0 libxcb1 libdbus-1-3
-#                       — same story, transitive Qt6 deps.
-# We can't express these through DEPENDS since they're host-side
-# packages, not Yocto recipes. Missing any of them surfaces as a
-# specific FATAL from Nuitka or PySide6 during do_compile.
+# Only host tools we still lean on are those Yocto already treats as
+# HOSTTOOLS (gcc, make, coreutils, ...) — the C compiler Nuitka shells
+# out to comes from there. No specific Python version or -dev package
+# needs to be preinstalled on the build machine.
 
 # Nuitka emits a native binary and PySide6 is only shipped as x86_64 /
 # aarch64 wheels on PyPI. Restrict this recipe to x86_64 targets — which
@@ -63,7 +70,7 @@ INHIBIT_PACKAGE_STRIP = "1"
 INHIBIT_PACKAGE_DEBUG_SPLIT = "1"
 INHIBIT_SYSROOT_STRIP = "1"
 
-# Nuitka's --standalone bundle ships private copies of libpython3.13,
+# Nuitka's --standalone bundle ships private copies of libpython,
 # libcrypto, libssl, libffi, libexpat, libuuid, liblzma, all of Qt6,
 # ffmpeg, brotli, openssl 1.1 blobs from manylinux2014 wheels, ...
 # Left alone, Yocto's automatic ELF analysis would (a) register these
@@ -120,17 +127,17 @@ python populate_private_libs() {
 
 do_package[prefuncs] += "populate_private_libs"
 
-# Nuitka calls the C compiler directly; we want the *host* toolchain, not
-# Yocto's cross-gcc that leaks into PATH via the recipe-sysroot. Nudge PATH
-# and env vars back to the build machine's system defaults before invoking
-# pip / pyside6-deploy.
+# Nuitka calls the C compiler directly; we want the host's plain gcc
+# (from Yocto's HOSTTOOLS), not the cross-gcc Yocto injects via CC/etc.
+# Strip the cross-toolchain env but keep native-sysroot paths on PATH so
+# python3-native and friends stay reachable.
 export HOME = "${WORKDIR}/pip-home"
 
 python_venv_env() {
     unset CC CXX CPP AR AS LD NM OBJCOPY OBJDUMP RANLIB READELF STRIP
     unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
     unset PKG_CONFIG PKG_CONFIG_PATH PKG_CONFIG_LIBDIR PKG_CONFIG_SYSROOT_DIR
-    export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
+    export PATH="${STAGING_BINDIR_NATIVE}:${STAGING_BINDIR_NATIVE}/python3-native:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
 }
 
 do_compile() {
@@ -162,25 +169,18 @@ do_compile() {
     # Bootstrap pdm into a scratch dir; --target is a flat drop and
     # bypasses sysconfig, so it doesn't hit the STAGING_LIBDIR bug.
     #
-    # pdm is pinned <2.29: from 2.29 onwards `pdm export` auto-creates a
-    # virtualenv when its findpython discovery can't match the project's
-    # requires-python (`==3.13.*`) against a PATH candidate. python3-native
-    # is not on PATH (python_venv_env scrubs it), so pdm misses it even
-    # though the current interpreter *is* 3.13.4, then virtualenv's
-    # sanity-check exec of the venv python fails because Yocto's uninative
-    # LD_LIBRARY_PATH isn't in scope. Older pdm just uses the current
-    # interpreter and skips the whole discovery/venv dance.
+    # pdm is pinned <2.29: from 2.29 onwards `pdm export` runs findpython
+    # discovery and, if the project's requires-python doesn't match a
+    # candidate, auto-creates a virtualenv whose sanity-check exec then
+    # fails inside Yocto's uninative environment. Older pdm just uses the
+    # current interpreter. PDM_PYTHON / PDM_PYTHON_USE_VENV below belt-
+    # and-braces the same intent in case the pin ever slips.
     ${STAGING_BINDIR_NATIVE}/python3-native/python3 -m pip install \
         --no-cache-dir --target ${S}/.pdm-runner 'pdm<2.29'
 
     # Translate pdm.lock into a plain requirements.txt via pdm's own
     # resolver output. `-G build` opts the [dependency-groups.build]
     # entries (Nuitka, patchelf) in alongside the default project deps.
-    #
-    # PDM_PYTHON forces pdm to skip findpython discovery and use the
-    # interpreter it's already running under; PDM_PYTHON_USE_VENV=false
-    # blocks the auto-venv behavior described above as a belt-and-braces
-    # measure in case the pin above ever slips.
     PYTHONPATH="${S}/.pdm-runner" \
     PDM_PYTHON="${STAGING_BINDIR_NATIVE}/python3-native/python3" \
     PDM_PYTHON_USE_VENV=false \
@@ -213,54 +213,52 @@ do_compile() {
         --prefix ${S}/.venv \
         --requirement ${S}/.venv-requirements.txt
 
-    # Nuitka's default is to link libpython statically, which needs
-    # python3-dev headers on the build host. Rather than adding that as
-    # a host requirement, tell nuitka to link libpython dynamically. The
-    # target image already installs `python3`, so libpython3.13.so.1.0
-    # is present at runtime.
+    # Nuitka's default is to link libpython statically, which would need
+    # a matching libpython.a to be around. Ask it to link libpython
+    # dynamically instead: the target image installs Yocto's python3
+    # (same version as python3-native — they come from the same recipe),
+    # so the runtime libpython3.x.so.1.0 will be there.
     sed -i 's/^extra_args = /extra_args = --static-libpython=no /' pysidedeploy.spec
 
-    # Wrapper for .venv/bin/python — runs the *host* python3 with our
-    # site-packages injected via PYTHONPATH. pyside6-deploy will
-    # subprocess-invoke this path during nuitka's compile.
+    # Detect python3-native's major.minor at build time so a poky bump
+    # (3.13 -> 3.14 -> ...) doesn't need edits here — site-packages,
+    # libpython soname, and pip's install layout all pivot on this.
+    PYTHON_MM=$(${STAGING_BINDIR_NATIVE}/python3-native/python3 -c \
+        'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+
+    # Wrapper for .venv/bin/python — pyside6-deploy re-execs this path
+    # during Nuitka's compile stage. It has to inject our .venv
+    # site-packages (pip installed there via --prefix, not the sysroot
+    # site-packages) and hand off to python3-native so Nuitka links its
+    # generated C against the interpreter/libpython we control.
     #
-    # Why host python3 rather than python3-native: PySide6's Qt libs
-    # dlopen a swath of system libs (glib, X11, dbus, libGL, ...) that
-    # aren't part of Yocto's uninative sysroot. We can't cleanly mix
-    # uninative libc with host system libs (the previous attempt with
-    # LD_LIBRARY_PATH augmentation segfaulted on ABI drift). The host
-    # already has a self-consistent x86_64 Linux environment with all
-    # of those libs, so we use it for the compile stage. This does
-    # require the build host to have Python 3.13 available at
-    # /usr/bin/python3 — matching the pyproject.toml requires-python.
-    # rm -f first so a leftover file from a previous failed compile
-    # can't block the redirect with "Permission denied".
-    rm -f ${S}/.venv/bin/python ${S}/.venv/bin/python3 ${S}/.venv/bin/python3.13
+    # LD_LIBRARY_PATH points at the native sysroot so Qt6's dlopen of
+    # glib/xcb/xkbcommon/dbus/mesa/X11/wayland/fontconfig resolves to
+    # the versions built by our DEPENDS — no host libs, no ABI mixing.
+    # rm -f first so a leftover from a failed previous run doesn't
+    # block the redirect with EPERM.
+    rm -f ${S}/.venv/bin/python ${S}/.venv/bin/python3 ${S}/.venv/bin/python$PYTHON_MM
     cat > ${S}/.venv/bin/python <<WRAPPER_EOF
 #!/bin/sh
-PYTHONPATH="${S}/.venv/lib/python3.13/site-packages\${PYTHONPATH:+:\$PYTHONPATH}" \\
-    exec /usr/bin/python3 "\$@"
+PYTHONPATH="${S}/.venv/lib/python$PYTHON_MM/site-packages\${PYTHONPATH:+:\$PYTHONPATH}" \\
+LD_LIBRARY_PATH="${STAGING_LIBDIR_NATIVE}\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}" \\
+    exec ${STAGING_BINDIR_NATIVE}/python3-native/python3 "\$@"
 WRAPPER_EOF
     chmod +x ${S}/.venv/bin/python
     ln -sf python ${S}/.venv/bin/python3
-    ln -sf python ${S}/.venv/bin/python3.13
+    ln -sf python ${S}/.venv/bin/python$PYTHON_MM
 
-    # Kick off pyside6-deploy / nuitka using the host interpreter.
-    # LD_LIBRARY_PATH points at Debian's multi-arch lib dirs so
-    # nuitka's compile-time PySide6 introspection subprocess can dlopen
-    # libglib-2.0 / libX11 / libdbus (Qt6's transitive deps). Yocto's
-    # own LD_LIBRARY_PATH (pointing at uninative) is dropped for this
-    # invocation to keep host Qt libs consistent with host glibc.
-    # VIRTUAL_ENV is set so pyside6-deploy's is_venv() check (which
-    # literally just does `os.environ.get("VIRTUAL_ENV")`) skips its
-    # interactive "install deploy deps?" prompt.
+    # Kick off pyside6-deploy / nuitka.
+    # VIRTUAL_ENV satisfies pyside6-deploy's is_venv() check (a plain
+    # os.environ.get) so it skips its interactive "install deploy
+    # deps?" prompt.
     # .venv/bin on PATH lets Nuitka find the `patchelf` shim from the
     # pypi patchelf wheel during --standalone mode.
     PATH="${S}/.venv/bin:${PATH}" \
-    LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu" \
-    PYTHONPATH="${S}/.venv/lib/python3.13/site-packages" \
+    LD_LIBRARY_PATH="${STAGING_LIBDIR_NATIVE}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    PYTHONPATH="${S}/.venv/lib/python$PYTHON_MM/site-packages" \
     VIRTUAL_ENV="${S}/.venv" \
-        /usr/bin/python3 - <<PYEOF
+        ${STAGING_BINDIR_NATIVE}/python3-native/python3 - <<PYEOF
 import sys
 sys.argv = ["pyside6-deploy", "-c", "pysidedeploy.spec"]
 from PySide6.scripts.pyside_tool import deploy
