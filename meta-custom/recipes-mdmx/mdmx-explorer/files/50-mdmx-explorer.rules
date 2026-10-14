@@ -1,0 +1,13 @@
+// Allow the desktop `user` account to run the mdmx-explorer mount
+// helper via pkexec without an authentication prompt. The helper
+// validates its argv (fstype whitelist, mountpoint regex, option
+// scrub) and only invokes `mount` / `umount` for /run/media/net.*
+// targets — the effective privilege granted is "mount network shares
+// under /run/media/net.* on behalf of the console operator".
+polkit.addRule(function (action, subject) {
+    if (action.id === "org.freedesktop.policykit.exec"
+        && action.lookup("program") === "/usr/libexec/mdmx-explorer-mount"
+        && subject.user === "user") {
+        return polkit.Result.YES;
+    }
+});

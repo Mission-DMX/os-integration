@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Show Files
+GenericName=File Explorer
+Comment=Browse show files, home directory, and USB / network mounts
+Exec=/opt/MissionDMX/explorer/explorer
+Icon=mdmx-explorer
+Terminal=false
+Categories=Utility;FileManager;System;
+StartupWMClass=mdmx-explorer
+Keywords=files;explorer;mount;smb;nfs;sshfs;show;

@@ -1,0 +1,22 @@
+[project]
+name = "mdmx-explorer"
+version = "1.0.0"
+description = "Mission-DMX graphical file explorer"
+# Narrowed to the exact Python poky walnascar ships (3.13.x). A broader
+# range forces pdm to find a PySide6 that works on every future Python
+# in the range too — which no release currently does because the newest
+# PySide6 caps at <3.16.
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "PySide6>=6.8",
+    "lxml>=5.0",
+]
+
+[dependency-groups]
+build = [
+    "nuitka>=2.0",
+    "patchelf>=0.17",
+]
+
+[tool.pdm]
+distribution = false

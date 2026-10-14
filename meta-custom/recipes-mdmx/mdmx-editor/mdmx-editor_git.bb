@@ -17,284 +17,25 @@ PV = "1.3.0+git${SRCPV}"
 
 S = "${WORKDIR}/git"
 
-# The generated mission-dmx.desktop declares
-# MimeType=application/x-mdmx-showfile — Yocto's QA insists on
-# mime-xdg to wire desktop-database and mime-database updates into
-# the package's postinst/postrm.
-inherit mime-xdg
+inherit pyside6-nuitka-deploy
 
-# python3-native supplies the interpreter Nuitka runs under; its
-# version tracks poky's python3 recipe, which also becomes the target's
-# python3 — so libpython versions between build and target stay in sync
-# without pinning anything to the build host. The remaining DEPENDS are
-# the system libs PySide6's Qt6 wheels dlopen during compile-time
-# introspection (glib/xcb/xkbcommon/dbus/mesa/x11/wayland/fontconfig);
-# taking them from Yocto's uninative sysroot keeps everything ABI-consistent
-# with python3-native. See do_compile for the sysconfig quirk that forces
-# `pip install --prefix` instead of pdm sync.
-DEPENDS = " \
-    python3-native \
-    python3-pip-native \
-    desktop-file-utils \
-    glib-2.0-native \
-    libxkbcommon-native \
-    libxcb-native \
-    dbus-native \
-    mesa-native \
-    libx11-native \
-    wayland-native \
-    fontconfig-native \
-"
+# Keep the editor installed flat under /opt/MissionDMX/ (unchanged from
+# before the bbclass refactor) so the .desktop Exec path, hard-coded
+# references, and the mdmx-explorer launcher's target all stay valid.
+PYSIDE6_INSTALL_PREFIX = "/opt/MissionDMX"
+PYSIDE6_DIST_DIR = "MissionDMX-Editor.dist"
+PYSIDE6_BIN_NAME = "editor"
 
-# Only host tools we still lean on are those Yocto already treats as
-# HOSTTOOLS (gcc, make, coreutils, ...) — the C compiler Nuitka shells
-# out to comes from there. No specific Python version or -dev package
-# needs to be preinstalled on the build machine.
-
-# Nuitka emits a native binary and PySide6 is only shipped as x86_64 /
-# aarch64 wheels on PyPI. Restrict this recipe to x86_64 targets — which
-# is what our qemux86-64 / genericx86-64 image uses — so we can rely on
-# the build host to be an x86_64 machine as well.
-COMPATIBLE_HOST = "(x86_64).*-linux"
-
-# pdm sync pulls ~1 GB of wheels from PyPI (Qt6, opencv, aiortc,
-# onnxruntime-openvino, ...). Enumerating each wheel as a SRC_URI entry
-# would be unmaintainable — grant network access to do_compile instead.
-do_compile[network] = "1"
-
-# Everything Nuitka links against is already inside the bundle. Skip the
-# Yocto QA checks that don't apply to a self-contained /opt/ install of
-# manylinux2014 blobs.
-INSANE_SKIP:${PN} += "already-stripped ldflags rpaths textrel arch libdir file-rdeps buildpaths dev-so staticdev"
-INHIBIT_PACKAGE_STRIP = "1"
-INHIBIT_PACKAGE_DEBUG_SPLIT = "1"
-INHIBIT_SYSROOT_STRIP = "1"
-
-# Nuitka's --standalone bundle ships private copies of libpython,
-# libcrypto, libssl, libffi, libexpat, libuuid, liblzma, all of Qt6,
-# ffmpeg, brotli, openssl 1.1 blobs from manylinux2014 wheels, ...
-# Left alone, Yocto's automatic ELF analysis would (a) register these
-# .so files as another provider of system-owned sonames (→ "Multiple
-# shlib providers"), and (b) via RPM's file-deps generator, synthesise
-# Requires: entries with mangled sonames like libcrypto-5409cd36.so.
-# 1.1.1k that dnf can't resolve.
-#
-# We solve (a) with PRIVATE_LIBS — populated dynamically by scanning
-# the bundle for SONAMEs so the shlib generator treats every bundled
-# library as private (not registered as a provider, and not required
-# externally when other bundled binaries link against it). External
-# DT_NEEDED entries (libgssapi_krb5.so.2, libbrotlidec.so.1, ...) fall
-# through to Yocto's shlib provider DB, which maps them back to the
-# packages that install them and adds those to RDEPENDS automatically.
-#
-# We solve (b) by leaving SKIP_FILEDEPS on for RPM's own generator;
-# Yocto's shlib RDEPENDS already covers the same libs from a saner
-# source, so RPM's mangled-soname Requires: are pure noise here.
-SKIP_FILEDEPS:${PN} = "1"
-
-python populate_private_libs() {
-    import subprocess
-    from pathlib import Path
-
-    dist = Path(d.getVar('D')) / 'opt' / 'MissionDMX'
-    if not dist.exists():
-        return
-
-    sonames = set()
-    for so in dist.rglob('*.so*'):
-        if not so.is_file():
-            continue
-        soname = None
-        try:
-            out = subprocess.run(
-                ['readelf', '-d', str(so)],
-                capture_output=True, text=True, check=False,
-            )
-            for line in out.stdout.splitlines():
-                if 'SONAME' in line and '[' in line and ']' in line:
-                    soname = line[line.rfind('[') + 1:line.rfind(']')]
-                    break
-        except Exception:
-            pass
-        # Fall back to the filename for libs Nuitka mangles per
-        # manylinux2014 convention (soname == filename in those cases).
-        sonames.add(soname or so.name)
-
-    pn = d.getVar('PN')
-    bb.note("populate_private_libs: %d sonames marked private" % len(sonames))
-    d.setVar('PRIVATE_LIBS:%s' % pn, ' '.join(sorted(sonames)))
+# Editor-specific: ship resources/ and configs/ next to the compiled
+# binary (upstream reads them via relative paths at startup).
+pyside6_post_deploy() {
+    cp -rL src/resources bin/${PYSIDE6_DIST_DIR}/
+    cp -rL src/configs   bin/${PYSIDE6_DIST_DIR}/
+    mv bin/${PYSIDE6_DIST_DIR}/${PYSIDE6_BIN_SRC_NAME} \
+       bin/${PYSIDE6_DIST_DIR}/${PYSIDE6_BIN_NAME}
 }
 
-do_package[prefuncs] += "populate_private_libs"
-
-# Nuitka calls the C compiler directly; we want the host's plain gcc
-# (from Yocto's HOSTTOOLS), not the cross-gcc Yocto injects via CC/etc.
-# Strip the cross-toolchain env but keep native-sysroot paths on PATH so
-# python3-native and friends stay reachable.
-export HOME = "${WORKDIR}/pip-home"
-
-python_venv_env() {
-    unset CC CXX CPP AR AS LD NM OBJCOPY OBJDUMP RANLIB READELF STRIP
-    unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
-    unset PKG_CONFIG PKG_CONFIG_PATH PKG_CONFIG_LIBDIR PKG_CONFIG_SYSROOT_DIR
-    export PATH="${STAGING_BINDIR_NATIVE}:${STAGING_BINDIR_NATIVE}/python3-native:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
-}
-
-do_compile() {
-    python_venv_env
-
-    cd ${S}
-    mkdir -p ${HOME}
-
-    # Yocto's python3-native has a sysconfig patched to hard-code
-    # LIBDIR at ${STAGING_LIBDIR} (see poky's python3_%.bb, the sed
-    # over _sysconfigdata). That defeats the venv-relative install
-    # destination logic in Python's own venv, pdm-installer, and pip's
-    # --python re-exec: every wheel ends up under recipe-sysroot-native
-    # instead of the project's .venv/, and .venv/bin/pyside6-deploy is
-    # never generated. We can't drive the install through `pdm sync`
-    # for the same reason.
-    #
-    # What we CAN still do is use pdm as the resolver: `pdm export`
-    # only reads pdm.lock and prints a requirements.txt — it never
-    # touches sysconfig — so the version pins that upstream ships stay
-    # authoritative even when they change. The actual install goes
-    # through `pip install --prefix`, which is documented to override
-    # sysconfig's install layout, and .venv/bin/python is fronted by
-    # a shell wrapper so pysidedeploy.spec's `python_path = .venv/bin/
-    # python` reference stays working (nuitka spawns it during
-    # compile).
-    mkdir -p ${S}/.venv/bin ${S}/.pdm-runner
-
-    # Bootstrap pdm into a scratch dir; --target is a flat drop and
-    # bypasses sysconfig, so it doesn't hit the STAGING_LIBDIR bug.
-    #
-    # pdm is pinned <2.29: from 2.29 onwards `pdm export` runs findpython
-    # discovery and, if the project's requires-python doesn't match a
-    # candidate, auto-creates a virtualenv whose sanity-check exec then
-    # fails inside Yocto's uninative environment. Older pdm just uses the
-    # current interpreter. PDM_PYTHON / PDM_PYTHON_USE_VENV below belt-
-    # and-braces the same intent in case the pin ever slips.
-    ${STAGING_BINDIR_NATIVE}/python3-native/python3 -m pip install \
-        --no-cache-dir --target ${S}/.pdm-runner 'pdm<2.29'
-
-    # Translate pdm.lock into a plain requirements.txt via pdm's own
-    # resolver output. `-G build` opts the [dependency-groups.build]
-    # entries (Nuitka, patchelf) in alongside the default project deps.
-    PYTHONPATH="${S}/.pdm-runner" \
-    PDM_PYTHON="${STAGING_BINDIR_NATIVE}/python3-native/python3" \
-    PDM_PYTHON_USE_VENV=false \
-        ${STAGING_BINDIR_NATIVE}/python3-native/python3 -m pdm export \
-            --format requirements \
-            --without-hashes \
-            --group build \
-            --output ${S}/.venv-requirements.txt
-
-    # Substitute opencv-python -> opencv-python-headless: pdm.lock pins
-    # the GUI variant which pulls libGL/libQt at import time, and
-    # nuitka's anti-bloat plugin fails during compile-time cv2
-    # introspection when libGL.so.1 isn't dlopen-able. The editor only
-    # uses cv2 for image processing (autotrack), never for cv2.imshow,
-    # so the headless variant (same API, same version numbers) is a
-    # drop-in replacement.
-    sed -i 's/^opencv-python==/opencv-python-headless==/' \
-        ${S}/.venv-requirements.txt
-
-    # Materialise the pdm-resolved versions into .venv/.
-    # --ignore-installed forces a fresh install into --prefix regardless
-    # of what's already present in the base interpreter's site-packages.
-    # Without it, pip tries to "upgrade" packages Yocto's python3-pip-
-    # native staged into the recipe sysroot (e.g. packaging 24.2), and
-    # then fails on uninstall because those Yocto-staged packages don't
-    # ship RECORD files.
-    ${STAGING_BINDIR_NATIVE}/python3-native/python3 -m pip install \
-        --no-cache-dir \
-        --ignore-installed \
-        --prefix ${S}/.venv \
-        --requirement ${S}/.venv-requirements.txt
-
-    # Nuitka's default is to link libpython statically, which would need
-    # a matching libpython.a to be around. Ask it to link libpython
-    # dynamically instead: the target image installs Yocto's python3
-    # (same version as python3-native — they come from the same recipe),
-    # so the runtime libpython3.x.so.1.0 will be there.
-    sed -i 's/^extra_args = /extra_args = --static-libpython=no /' pysidedeploy.spec
-
-    # Detect python3-native's major.minor at build time so a poky bump
-    # (3.13 -> 3.14 -> ...) doesn't need edits here — site-packages,
-    # libpython soname, and pip's install layout all pivot on this.
-    PYTHON_MM=$(${STAGING_BINDIR_NATIVE}/python3-native/python3 -c \
-        'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-
-    # Wrapper for .venv/bin/python — pyside6-deploy re-execs this path
-    # during Nuitka's compile stage. It has to inject our .venv
-    # site-packages (pip installed there via --prefix, not the sysroot
-    # site-packages) and hand off to python3-native so Nuitka links its
-    # generated C against the interpreter/libpython we control.
-    #
-    # LD_LIBRARY_PATH points at the native sysroot so Qt6's dlopen of
-    # glib/xcb/xkbcommon/dbus/mesa/X11/wayland/fontconfig resolves to
-    # the versions built by our DEPENDS — no host libs, no ABI mixing.
-    # rm -f first so a leftover from a failed previous run doesn't
-    # block the redirect with EPERM.
-    rm -f ${S}/.venv/bin/python ${S}/.venv/bin/python3 ${S}/.venv/bin/python$PYTHON_MM
-    cat > ${S}/.venv/bin/python <<WRAPPER_EOF
-#!/bin/sh
-PYTHONPATH="${S}/.venv/lib/python$PYTHON_MM/site-packages\${PYTHONPATH:+:\$PYTHONPATH}" \\
-LD_LIBRARY_PATH="${STAGING_LIBDIR_NATIVE}\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}" \\
-    exec ${STAGING_BINDIR_NATIVE}/python3-native/python3 "\$@"
-WRAPPER_EOF
-    chmod +x ${S}/.venv/bin/python
-    ln -sf python ${S}/.venv/bin/python3
-    ln -sf python ${S}/.venv/bin/python$PYTHON_MM
-
-    # Kick off pyside6-deploy / nuitka.
-    # VIRTUAL_ENV satisfies pyside6-deploy's is_venv() check (a plain
-    # os.environ.get) so it skips its interactive "install deploy
-    # deps?" prompt.
-    # .venv/bin on PATH lets Nuitka find the `patchelf` shim from the
-    # pypi patchelf wheel during --standalone mode.
-    PATH="${S}/.venv/bin:${PATH}" \
-    LD_LIBRARY_PATH="${STAGING_LIBDIR_NATIVE}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    PYTHONPATH="${S}/.venv/lib/python$PYTHON_MM/site-packages" \
-    VIRTUAL_ENV="${S}/.venv" \
-        ${STAGING_BINDIR_NATIVE}/python3-native/python3 - <<PYEOF
-import sys
-sys.argv = ["pyside6-deploy", "-c", "pysidedeploy.spec"]
-from PySide6.scripts.pyside_tool import deploy
-sys.exit(deploy())
-PYEOF
-    cp -rL src/resources bin/MissionDMX-Editor.dist/
-    cp -rL src/configs   bin/MissionDMX-Editor.dist/
-    mv bin/MissionDMX-Editor.dist/main.bin bin/MissionDMX-Editor.dist/editor
-}
-
-do_install() {
-    python_venv_env
-
-    install -d ${D}/opt/MissionDMX
-    # cp -a would preserve the builder's uid/gid on every file, which
-    # trips Yocto's "host contamination" packaging QA (uid 1000 isn't a
-    # valid target user). -rL copies without preserving ownership; the
-    # subsequent chown -R re-stamps everything to root:root under
-    # fakeroot.
-    cp -rL ${S}/bin/MissionDMX-Editor.dist/. ${D}/opt/MissionDMX/
-    chown -R 0:0 ${D}/opt/MissionDMX
-    chmod 0755 ${D}/opt/MissionDMX/editor
-
-    # Nuitka baked Debian's ELF interpreter path
-    # (/lib64/ld-linux-x86-64.so.2) into the compiled binary, but Yocto
-    # with usrmerge only ships the loader at /usr/lib/ld-linux-x86-64.so.2
-    # (no /lib64 directory exists), so execve() fails on target with
-    # "cannot execute: required file not found". Rewrite PT_INTERP on
-    # every ELF that has one — mainly the top-level `editor` executable;
-    # .so files have no PT_INTERP and patchelf will simply exit non-zero
-    # on them, which we swallow.
-    for f in $(find ${D}/opt/MissionDMX -type f); do
-        ${S}/.venv/bin/patchelf --set-interpreter \
-            /usr/lib/ld-linux-x86-64.so.2 "$f" 2>/dev/null || true
-    done
-
+do_install:append() {
     # Icon at the standard hicolor path so waybar/wofi/fuzzel can render it.
     if [ -f ${S}/src/resources/logo.png ]; then
         install -d ${D}${datadir}/icons/hicolor/256x256/apps
@@ -304,10 +45,7 @@ do_install() {
 
     # Generate the .desktop entry with upstream's own build_files/
     # build_desktop.py so the name/version/description track pyproject.toml
-    # instead of drifting from a hand-copied template. The icon field is
-    # passed as an icon-theme name ("mdmx-editor") — the PNG installed
-    # above at hicolor/256x256/apps/mdmx-editor.png is what the desktop
-    # environment will resolve it to.
+    # instead of drifting from a hand-copied template.
     install -d ${D}${datadir}/applications
     cd ${S} && ${S}/.venv/bin/python - <<PYEOF
 import sys
@@ -323,20 +61,17 @@ write_desktop(
 PYEOF
 
     # Show file / project cache paths the editor writes to at runtime.
-    # /usr/local is on the read-only rootfs, so the show-file directory has
-    # to live on the userdata partition; /var is bind-mounted from userdata
-    # by mdmx-firstboot. The initial (empty) dir is created in the rootfs's
-    # /var and gets seeded onto userdata on first boot. A compatibility
-    # symlink at /usr/local/share/missionDMX -> /var/lib/missionDMX keeps
-    # any hard-coded editor references working.
+    # /usr/local is on the read-only rootfs, so the show-file directory
+    # has to live on the userdata partition; /var is bind-mounted from
+    # userdata by mdmx-firstboot. A compatibility symlink keeps any
+    # hard-coded /usr/local/share/missionDMX references working.
     install -d -m 0777 ${D}/var/lib/missionDMX
     install -d -m 0777 ${D}/var/cache/missionDMX
     install -d ${D}/usr/local/share
     ln -s /var/lib/missionDMX ${D}/usr/local/share/missionDMX
 }
 
-FILES:${PN} = " \
-    /opt/MissionDMX \
+FILES:${PN} += " \
     ${datadir}/applications/mission-dmx.desktop \
     ${datadir}/icons/hicolor/256x256/apps/mdmx-editor.png \
     /usr/local/share/missionDMX \
@@ -363,18 +98,11 @@ RDEPENDS:${PN} = " \
     tzdata-pacific \
 "
 
-# The shlib scan can only *resolve* an external soname to an RDEPENDS
-# package if that package has actually been built — its shlibs data has
-# to be present in Yocto's pkgdata/shlibs2/. If nothing else in the
-# image pulls libgssapi-krb5 / brotli / … in, those recipes are never
-# built and the scan silently fails to resolve. Listing them here
-# forces them into the build graph, which makes their shlibs data
-# available for auto-resolution *and* guarantees the shared libs are
-# installed at runtime.
-#
-# libsdl2 is a special case: pysdl2 loads it via ctypes.CDLL at
-# import time, not as a DT_NEEDED entry, so no static analysis catches
-# it. These runtime dlopen deps have to be added by hand as they
-# surface.
+# The shlib scan can only resolve an external soname to an RDEPENDS
+# package if that package has actually been built. Listing libgssapi-krb5,
+# brotli etc. here forces them into the build graph so their shlibs data
+# is available for auto-resolution. libsdl2 is a special case: pysdl2
+# loads it via ctypes.CDLL at import time, not as a DT_NEEDED entry, so
+# no static analysis catches it.
 
 RRECOMMENDS:${PN} = "realtime-fish"
