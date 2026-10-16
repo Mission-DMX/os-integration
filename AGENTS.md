@@ -3,6 +3,7 @@ This project build firmware based on yocto for an embedded system with touch scr
 
 ## General instructions
 Avoid adding new dependencies globally but add them to existing recipies first if possible.
+If you add or modify a recipe, document the usage, intent, behavior and quirks in a recipe-local README.md file.
 
 ## Tool usage
 The image can be testes using make debug on the local host. This spawns a GDB server that can be attached to as well as a console.
