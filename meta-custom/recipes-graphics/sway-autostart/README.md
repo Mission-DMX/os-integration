@@ -12,6 +12,7 @@ alongside the graphical session.
 | `/lib/systemd/system/pulseaudio.service`            | `pulseaudio.service`         | PulseAudio in `--system` mode as the `pulse` user. |
 | `/etc/sway/config.d/40-mako.conf`                   | `40-mako.conf`               | Starts mako notification daemon from sway.         |
 | `/etc/sway/config.d/50-waybar.conf`                 | `50-waybar.conf`             | Starts waybar from sway.                           |
+| `/etc/sway/config.d/60-keybindings.conf`            | `60-keybindings.conf`        | Window-management keybindings + tabbed default.    |
 | `/etc/sway/waybar/{config,style.css}`               | `waybar-{config,style.css}`  | Bar layout and theming.                            |
 | `/etc/profile.d/sway-env.sh`                        | `sway-env.sh`                | Login-shell env for `swaymsg`/IPC access.          |
 | `/etc/pulse/client.conf.d/50-system-server.conf`    | `50-system-server.conf`      | Points libpulse clients at the system socket.      |

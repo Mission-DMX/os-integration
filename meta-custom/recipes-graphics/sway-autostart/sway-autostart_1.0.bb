@@ -10,6 +10,7 @@ SRC_URI = " \
     file://50-system-server.conf \
     file://40-mako.conf \
     file://50-waybar.conf \
+    file://60-keybindings.conf \
     file://waybar-config \
     file://waybar-style.css \
     file://sway-env.sh \
@@ -33,6 +34,7 @@ do_install() {
     install -d ${D}${sysconfdir}/sway/config.d
     install -m 0644 ${S}/40-mako.conf ${D}${sysconfdir}/sway/config.d/
     install -m 0644 ${S}/50-waybar.conf ${D}${sysconfdir}/sway/config.d/
+    install -m 0644 ${S}/60-keybindings.conf ${D}${sysconfdir}/sway/config.d/
 
     install -d ${D}${sysconfdir}/sway/waybar
     install -m 0644 ${S}/waybar-config ${D}${sysconfdir}/sway/waybar/config
@@ -55,6 +57,7 @@ FILES:${PN} = " \
     ${systemd_system_unitdir}/pulseaudio.service \
     ${sysconfdir}/sway/config.d/40-mako.conf \
     ${sysconfdir}/sway/config.d/50-waybar.conf \
+    ${sysconfdir}/sway/config.d/60-keybindings.conf \
     ${sysconfdir}/sway/waybar/config \
     ${sysconfdir}/sway/waybar/style.css \
     ${sysconfdir}/profile.d/sway-env.sh \
