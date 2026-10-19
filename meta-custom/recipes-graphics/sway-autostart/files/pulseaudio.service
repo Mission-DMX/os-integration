@@ -1,0 +1,32 @@
+[Unit]
+Description=PulseAudio System Mode Daemon
+Documentation=man:pulseaudio(1)
+# Order before sway so the socket at /var/run/pulse/native exists by the
+# time anything launched from sway (foot shells, waybar, user scripts
+# calling pactl) tries to talk to it. Both units are WantedBy=
+# multi-user.target, so this is pure ordering, not a dependency: if
+# pulseaudio fails to start, sway still comes up.
+Before=sway.service
+After=sound.target systemd-tmpfiles-setup.service
+
+[Service]
+# --system makes pulseaudio fork, drop privileges from root to the
+# `pulse` system user that poky's pulseaudio-server recipe creates, and
+# publish its socket at /var/run/pulse/native with group=audio (set via
+# the recipe's -Daccess_group=audio meson flag). The earlier
+# sway-config `exec` approach was broken: sway.service runs User=user,
+# and pulseaudio --system refuses to start unless the parent is root.
+#
+# --disallow-exit prevents a client sending the "exit" command from
+# tearing down the daemon; --exit-idle-time=-1 keeps it alive even when
+# no client is connected (otherwise pactl's connect-exit cycle would
+# bounce the daemon every call). --daemonize=no keeps pulseaudio in the
+# foreground so systemd can track it; --log-target=journal routes logs
+# to journald rather than syslog.
+Type=simple
+ExecStart=/usr/bin/pulseaudio --system --disallow-exit --exit-idle-time=-1 --daemonize=no --log-target=journal
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

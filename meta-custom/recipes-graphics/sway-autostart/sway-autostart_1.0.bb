@@ -6,7 +6,8 @@ S = "${UNPACKDIR}"
 
 SRC_URI = " \
     file://sway.service \
-    file://30-pulseaudio.conf \
+    file://pulseaudio.service \
+    file://50-system-server.conf \
     file://40-mako.conf \
     file://50-waybar.conf \
     file://waybar-config \
@@ -16,7 +17,10 @@ SRC_URI = " \
 
 inherit allarch systemd
 
-SYSTEMD_SERVICE:${PN} = "sway.service"
+# Both services are WantedBy=multi-user.target; pulseaudio.service orders
+# itself Before=sway.service so the system-mode socket is up before any
+# client sway spawns tries to connect.
+SYSTEMD_SERVICE:${PN} = "sway.service pulseaudio.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 RDEPENDS:${PN} = "sway xkeyboard-config waybar dbus mako locale-base-en-us pulseaudio-server mdmx-user console-menu console-settings-daemon"
@@ -24,9 +28,9 @@ RDEPENDS:${PN} = "sway xkeyboard-config waybar dbus mako locale-base-en-us pulse
 do_install() {
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${S}/sway.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${S}/pulseaudio.service ${D}${systemd_system_unitdir}/
 
     install -d ${D}${sysconfdir}/sway/config.d
-    install -m 0644 ${S}/30-pulseaudio.conf ${D}${sysconfdir}/sway/config.d/
     install -m 0644 ${S}/40-mako.conf ${D}${sysconfdir}/sway/config.d/
     install -m 0644 ${S}/50-waybar.conf ${D}${sysconfdir}/sway/config.d/
 
@@ -36,14 +40,23 @@ do_install() {
 
     install -d ${D}${sysconfdir}/profile.d
     install -m 0644 ${S}/sway-env.sh ${D}${sysconfdir}/profile.d/sway-env.sh
+
+    # client.conf.d drop-in — libpulse reads /etc/pulse/client.conf and
+    # then every *.conf in /etc/pulse/client.conf.d/ (pa_config_parse's
+    # use_dot_d=true in src/pulse/client-conf.c). This points clients at
+    # the system-mode socket; without it pactl under sway hits a stale
+    # XDG runtime path and errors out with "Connection refused".
+    install -d ${D}${sysconfdir}/pulse/client.conf.d
+    install -m 0644 ${S}/50-system-server.conf ${D}${sysconfdir}/pulse/client.conf.d/
 }
 
 FILES:${PN} = " \
     ${systemd_system_unitdir}/sway.service \
-    ${sysconfdir}/sway/config.d/30-pulseaudio.conf \
+    ${systemd_system_unitdir}/pulseaudio.service \
     ${sysconfdir}/sway/config.d/40-mako.conf \
     ${sysconfdir}/sway/config.d/50-waybar.conf \
     ${sysconfdir}/sway/waybar/config \
     ${sysconfdir}/sway/waybar/style.css \
     ${sysconfdir}/profile.d/sway-env.sh \
+    ${sysconfdir}/pulse/client.conf.d/50-system-server.conf \
 "
