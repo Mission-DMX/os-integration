@@ -54,13 +54,20 @@ REQUIRED_DISTRO_FEATURES = "wayland polkit gobject-introspection gobject-introsp
 #                          the wizard parses to populate the layout combo.
 #   * libinput + sway    — target of the quirks file and of swaymsg.
 #   * polkit             — enforces the JS rule shipped here.
-#   * systemd            — provides timedatectl, the manage-units polkit
-#                          action for restarting sway.service, and the
-#                          timedate1 D-Bus service that enforces the
-#                          set-timezone polkit action.
-#   * tzdata             — /usr/share/zoneinfo so timedatectl can resolve
-#                          the chosen zone (yocto installs tzdata-core by
-#                          default on systemd distros but keep it explicit).
+#   * systemd            — provides timedatectl (used read-only for
+#                          list-timezones to populate the wizard dropdown
+#                          and show --property=Timezone as a fallback for
+#                          the current-zone lookup) and the manage-units
+#                          polkit action for restarting sway.service. The
+#                          set-timezone path is unused on this image —
+#                          the rootfs is RO so timedate1 can't rewrite
+#                          /etc/localtime; the saved zone travels via
+#                          the TZ env var set by sway-autostart's
+#                          mdmx-tz.sh instead.
+#   * tzdata             — /usr/share/zoneinfo so timedatectl list-timezones
+#                          and $TZ lookups resolve zone names (yocto
+#                          installs tzdata-core by default on systemd
+#                          distros but keep it explicit).
 RDEPENDS:${PN} = " \
     python3-core \
     python3-pygobject \

@@ -15,6 +15,7 @@ SRC_URI = " \
     file://waybar-config \
     file://waybar-style.css \
     file://sway-env.sh \
+    file://mdmx-tz.sh \
 "
 
 inherit allarch systemd
@@ -44,6 +45,7 @@ do_install() {
 
     install -d ${D}${sysconfdir}/profile.d
     install -m 0644 ${S}/sway-env.sh ${D}${sysconfdir}/profile.d/sway-env.sh
+    install -m 0644 ${S}/mdmx-tz.sh ${D}${sysconfdir}/profile.d/mdmx-tz.sh
 
     # client.conf.d drop-in — libpulse reads /etc/pulse/client.conf and
     # then every *.conf in /etc/pulse/client.conf.d/ (pa_config_parse's
@@ -64,5 +66,6 @@ FILES:${PN} = " \
     ${sysconfdir}/sway/waybar/config \
     ${sysconfdir}/sway/waybar/style.css \
     ${sysconfdir}/profile.d/sway-env.sh \
+    ${sysconfdir}/profile.d/mdmx-tz.sh \
     ${sysconfdir}/pulse/client.conf.d/50-system-server.conf \
 "

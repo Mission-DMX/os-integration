@@ -43,7 +43,7 @@ TTYVTDisallocate=yes
 # disposition to SIG_IGN; POSIX preserves SIG_IGN across exec, so sway
 # inherits it. Children (foot's shell, waybar, …) install their own
 # handlers and so remain interruptible normally.
-ExecStart=/bin/sh -c 'trap "" INT QUIT; exec /usr/bin/dbus-run-session -- /usr/bin/sway'
+ExecStart=/bin/sh -c 'trap "" INT QUIT; . /etc/profile.d/mdmx-tz.sh 2>/dev/null; exec /usr/bin/dbus-run-session -- /usr/bin/sway'
 Restart=on-failure
 RestartSec=5
 

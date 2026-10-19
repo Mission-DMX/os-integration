@@ -4,8 +4,11 @@
 Autostarted by sway via /etc/sway/config.d/60-console-settings.conf. Reads
 ~/.config/console-settings.ini for the saved xkb layout/variant, system
 timezone, and per-output touchscreen mapping. If complete and the stored
-hardware is still present it pushes everything into sway via i3ipc (plus
-timedatectl for the clock) and exits. Otherwise it opens a GTK3 wizard: a
+hardware is still present it pushes everything into sway via i3ipc and
+exits (the timezone is applied out-of-band — mdmx-tz.sh, sourced from
+sway.service and /etc/profile.d, reads this INI and exports TZ, because
+the rootfs is RO so timedatectl can't rewrite /etc/localtime). Otherwise
+it opens a GTK3 wizard: a
 layout dropdown, a timezone dropdown, then a per-output "touch this screen"
 calibrator whose device identification is done via evdev (sway's identifier
 is <vendor>:<product>:<name> and collapses on duplicate models, see
@@ -125,7 +128,21 @@ def parse_touch_map(items: Dict[str, str]) -> Dict[str, str]:
 # ---------- timezone ----------
 
 def current_timezone() -> str:
-    """Current system timezone as reported by timedatectl, or empty."""
+    """Current timezone from the saved INI, falling back to timedatectl.
+
+    Prefer the INI because the rootfs is read-only: `timedatectl
+    set-timezone` can't rewrite /etc/localtime, so timedatectl always
+    reports the image default (Universal/UTC) regardless of what the
+    user picked. The INI is the actual source of truth for the wizard's
+    "current choice" preselect.
+    """
+    try:
+        cfg = load_config()
+        saved = get_time_section(cfg).get("timezone", "").strip()
+        if saved and TIMEZONE_RE.match(saved):
+            return saved
+    except Exception:
+        pass
     try:
         proc = subprocess.run(
             ["timedatectl", "show", "--property=Timezone", "--value"],
@@ -150,19 +167,18 @@ def list_timezones() -> List[str]:
 
 
 def apply_timezone(timezone: str) -> None:
+    # The rootfs is read-only, so `timedatectl set-timezone` can't update
+    # /etc/localtime (systemd-timedated gets EROFS from unlink). Instead,
+    # the saved zone travels via the TZ environment variable: profile.d
+    # drop-in mdmx-tz.sh reads it from this INI and exports it, and
+    # sway.service's ExecStart sources the same file before starting the
+    # compositor. Nothing to do here beyond the regex check — the write to
+    # the INI has already happened in the caller, and the TZ picks up on
+    # the next sway (re)start / login.
     if not TIMEZONE_RE.match(timezone):
         logger.warning("invalid timezone %r; skipping", timezone)
         return
-    if current_timezone() == timezone:
-        return
-    logger.info("setting timezone to %s", timezone)
-    try:
-        subprocess.run(
-            ["timedatectl", "set-timezone", timezone],
-            check=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        logger.error("timedatectl set-timezone failed: %s", exc)
+    logger.info("timezone %s saved to %s", timezone, CONFIG_PATH)
 
 
 # ---------- hardware scan ----------
