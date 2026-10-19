@@ -20,6 +20,16 @@ alongside the graphical session.
 Both `sway.service` and `pulseaudio.service` are enabled via `SYSTEMD_SERVICE` /
 `SYSTEMD_AUTO_ENABLE=enable`.
 
+## On-screen keyboard wiring (`osk-manager` + `wvkbd`)
+
+`waybar-config` ships a `custom/osk` module in the right-hand group that
+calls `/usr/bin/oskctl toggle`; `#custom-osk` in `waybar-style.css`
+matches the look of the power button on the opposite end. `osk-manager`
+itself (started from its own `/etc/sway/config.d/70-osk.conf` drop-in)
+owns the actual `wvkbd-deskintl` process. Those live in the dedicated
+`osk-manager` and `wvkbd` recipes; sway-autostart just pulls them in via
+RDEPENDS and renders the tray button.
+
 ## Audio stack notes
 
 PulseAudio runs in `--system` mode, not per-user:

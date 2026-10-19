@@ -76,6 +76,22 @@ window#waybar {
     background-color: #d15a5a;
 }
 
+#custom-osk {
+    background-color: #2d2d54;
+    color: #ffffff;
+    font-size: 18px;
+    font-weight: bold;
+    min-width: 44px;
+    padding: 0 14px;
+    margin: 4px 4px 4px 4px;
+    border-radius: 6px;
+}
+
+#custom-osk:hover,
+#custom-osk:active {
+    background-color: #6b8afd;
+}
+
 #clock {
     color: #a0d8ff;
 }

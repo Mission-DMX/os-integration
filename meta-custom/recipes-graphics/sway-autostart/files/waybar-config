@@ -5,7 +5,7 @@
     "spacing": 4,
     "modules-left": ["custom/launcher", "sway/workspaces", "sway/mode"],
     "modules-center": ["sway/window"],
-    "modules-right": ["custom/fish", "cpu", "memory", "clock", "custom/power"],
+    "modules-right": ["custom/fish", "cpu", "memory", "clock", "custom/osk", "custom/power"],
     "sway/workspaces": {
         "disable-scroll": true,
         "all-outputs": false
@@ -36,6 +36,12 @@
     "clock": {
         "format": "{:%Y-%m-%d %H:%M:%S}",
         "interval": 1
+    },
+    "custom/osk": {
+        "format": " ⌨ ",
+        "tooltip": true,
+        "tooltip-format": "Tap to toggle the on-screen keyboard",
+        "on-click": "/usr/bin/oskctl toggle"
     },
     "custom/power": {
         "format": " ⏻ ",

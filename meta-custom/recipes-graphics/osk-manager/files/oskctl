@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""oskctl — talk to osk-manager's control socket.
+
+Usage:  oskctl show|hide|toggle|status
+
+Exists so waybar's custom module and the sway $mod+k binding can
+invoke a plain command instead of hand-rolling a Unix-socket write
+every time. The daemon speaks a one-line request / one-line JSON
+reply protocol; see osk-manager.py:_handle_command for the vocabulary.
+
+Implemented in Python (not shell) so we don't take a hard dep on a
+netcat variant — the image ships python3-core unconditionally
+(osk-manager itself is Python), and ncat/socat are not in IMAGE_INSTALL.
+For `status`, re-emits the daemon's JSON on stdout so waybar's custom
+module can consume it directly as `return-type: json`.
+"""
+
+from __future__ import annotations
+
+import os
+import socket
+import sys
+
+
+COMMANDS = {"show", "hide", "toggle", "status"}
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2 or argv[1] not in COMMANDS:
+        sys.stderr.write(
+            "usage: oskctl show|hide|toggle|status\n"
+        )
+        return 2
+    cmd = argv[1]
+
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or "/run/sway"
+    sock_path = os.path.join(runtime, "osk.sock")
+
+    if not os.path.exists(sock_path):
+        sys.stderr.write(
+            f"oskctl: control socket not found at {sock_path}; "
+            "is osk-manager running?\n"
+        )
+        return 1
+
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(2.0)
+        s.connect(sock_path)
+        s.sendall(cmd.encode("utf-8"))
+        s.shutdown(socket.SHUT_WR)
+        reply = b""
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            reply += chunk
+        s.close()
+    except OSError as exc:
+        sys.stderr.write(f"oskctl: socket error: {exc}\n")
+        return 1
+
+    # The daemon always emits one JSON line; forward it verbatim so
+    # waybar's custom/json module can parse it. For non-status commands
+    # the reply is still JSON ({"ok": true}) which waybar will just
+    # ignore when there's no on-click return handler.
+    sys.stdout.write(reply.decode("utf-8", "replace"))
+    if not reply.endswith(b"\n"):
+        sys.stdout.write("\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
