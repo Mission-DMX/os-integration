@@ -6,8 +6,8 @@ xdg-open / gio-open. Ships its own tiny Markdown → Pango-markup translator \
 and RTF parser because none of the layers in this distro provide a \
 Markdown or RTF renderer, and pulling in WebKit / a GNOME viewer stack \
 just for scene-notes display isn't worth the image size."
-LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+LICENSE = "BSD-3-Clause"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/BSD-3-Clause;md5=550794465ba0ec5312d6919e203a55f9"
 
 S = "${UNPACKDIR}"
 

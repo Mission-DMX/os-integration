@@ -1,0 +1,17 @@
+[Unit]
+Description=Register the Flathub system remote (one-shot)
+# local-fs.target guarantees /var is bind-mounted from userdata so the
+# remote config lands in the persistent partition, not the shadowed rootfs.
+After=local-fs.target
+# Idempotency: skip once the remote is registered.
+ConditionPathExists=!/var/lib/flatpak/repo/config
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+# Offline-safe: the .flatpakrepo file is local and carries the GPG key.
+# Summary metadata is fetched lazily on first install/search.
+ExecStart=/usr/bin/flatpak remote-add --system --if-not-exists flathub /etc/flatpak/remotes/flathub.flatpakrepo
+
+[Install]
+WantedBy=multi-user.target

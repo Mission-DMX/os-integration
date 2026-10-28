@@ -8,8 +8,8 @@ Installation itself is user-initiated: console-menu shows an 'Install Update' \
 entry when a pending marker exists, and invokes the shipped install helper via \
 pkexec — a polkit rule restricts that exact command path to the desktop user."
 
-LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+LICENSE = "BSD-3-Clause"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/BSD-3-Clause;md5=550794465ba0ec5312d6919e203a55f9"
 
 S = "${UNPACKDIR}"
 
@@ -39,11 +39,12 @@ RDEPENDS:${PN} = " \
 "
 
 SYSTEMD_PACKAGES = "${PN}"
-# Enable both units: the timer schedules runs; the service is enabled
-# WantedBy=multi-user.target so `systemctl start mdmx-updater.service`
-# can be invoked ad-hoc (from the console menu's manual "Check for
-# Updates" entry) without needing extra plumbing.
-SYSTEMD_SERVICE:${PN} = "mdmx-updater.service mdmx-updater.timer"
+# Enable only the timer; the service unit has no [Install] section so
+# it's never pulled in by a target. The timer schedules the periodic
+# runs (OnBootSec=10min + OnUnitActiveSec=6h); ad-hoc invocation from
+# the console menu uses `systemctl start mdmx-updater.service`, which
+# works regardless of the service's [Install] wiring.
+SYSTEMD_SERVICE:${PN} = "mdmx-updater.timer"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 do_install() {

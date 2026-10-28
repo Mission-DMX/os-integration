@@ -1,0 +1,27 @@
+name: Build Mission-DMX OS (branch)
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  build:
+    name: Build image (no publish)
+    runs-on: self-hosted
+    steps:
+      - name: Checkout Repository incl. Submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Regenerate disposable dev signing keys
+        run: |
+          rm -rf keys/signing
+          ./sign-images.sh --regen-keys --stage-keyring
+
+      - name: Build Yocto image
+        run: make build
+
+      - name: Build & sign RAUC bundle (local artifacts only)
+        run: make publish

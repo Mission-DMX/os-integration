@@ -5,8 +5,8 @@ root. Membership in video/input/render/audio/dialout gives Wayland the device \
 access it needs; membership in seat lets libseat talk to seatd; wheel is kept \
 so sudo works from the console."
 
-LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+LICENSE = "BSD-3-Clause"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/BSD-3-Clause;md5=550794465ba0ec5312d6919e203a55f9"
 
 inherit useradd allarch
 

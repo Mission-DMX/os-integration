@@ -4,7 +4,7 @@ addition to the standard rootfs mount step it runs mdmx-firstboot which \
 creates the userdata partition and bind-mounts /home and /var before \
 switch_root."
 
-LICENSE = "MIT"
+LICENSE = "BSD-3-Clause"
 
 INITRAMFS_SCRIPTS ?= " \
     initramfs-framework-base \

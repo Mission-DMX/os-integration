@@ -2,8 +2,10 @@
 # long-description:
 #   GPT partition table with:
 #     p1  esp        vfat  128 MiB  bootloader (GRUB-EFI) + grubenv
-#     p2  rootfsA    ext4   16 GiB  active firmware slot at build time
-#     p3  rootfsB    ext4   16 GiB  empty slot for OTA fallback
+#     p2  rootfsA    ext4   16 GiB  firmware slot A (populated at factory)
+#     p3  rootfsB    ext4   16 GiB  firmware slot B (populated at factory;
+#                                   same rootfs as A so GRUB's fallback path
+#                                   always lands on a bootable kernel)
 #   Partition 4 (userdata) is created by the mdmx-firstboot initramfs
 #   module on first boot from remaining disk space.
 
@@ -13,4 +15,4 @@ part /boot/efi --source bootimg-efi --sourceparams="loader=grub-efi,install-kern
 
 part / --source rootfs --ondisk sda --fstype=ext4 --label rootfsA --part-name rootfsA --align 1024 --fixed-size 16384M --use-uuid
 
-part --ondisk sda --fstype=ext4 --label rootfsB --part-name rootfsB --align 1024 --fixed-size 16384M --use-uuid --no-fstab-update
+part --source rawcopy --sourceparams="file=${IMGDEPLOYDIR}/${IMAGE_LINK_NAME}.ext4" --ondisk sda --fstype=ext4 --label rootfsB --part-name rootfsB --align 1024 --fixed-size 16384M --use-uuid --no-fstab-update

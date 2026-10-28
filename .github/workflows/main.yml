@@ -1,11 +1,13 @@
+name: Build & publish Mission-DMX OS
+
 on:
   push:
     branches:
-    - main
+      - main
 
 jobs:
-  build:
-    name: Build image
+  build-and-publish:
+    name: Build image & publish factory + update repo
     runs-on: self-hosted
     steps:
       - name: Checkout Repository incl. Submodule
@@ -13,5 +15,62 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Build Yocto with new config
+      - name: Fail fast if any signing secret is missing
+        env:
+          RSA_KEY:    ${{ secrets.MDMX_RSA_SIGNING_KEY   }}
+          RSA_CERT:   ${{ secrets.MDMX_RSA_SIGNING_CERT  }}
+          MLDSA_KEY:  ${{ secrets.MDMX_MLDSA_SIGNING_KEY }}
+          MLDSA_CERT: ${{ secrets.MDMX_MLDSA_SIGNING_CERT }}
+        run: |
+          missing=0
+          for v in RSA_KEY RSA_CERT MLDSA_KEY MLDSA_CERT; do
+            if [ -z "${!v}" ]; then
+              echo "::error ::missing required signing secret: MDMX_${v/_/_SIGNING_}"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+
+      - name: Install production signing keys
+        env:
+          RSA_KEY:    ${{ secrets.MDMX_RSA_SIGNING_KEY   }}
+          RSA_CERT:   ${{ secrets.MDMX_RSA_SIGNING_CERT  }}
+          MLDSA_KEY:  ${{ secrets.MDMX_MLDSA_SIGNING_KEY }}
+          MLDSA_CERT: ${{ secrets.MDMX_MLDSA_SIGNING_CERT }}
+        run: |
+          umask 077
+          mkdir -p keys/signing
+          printf '%s' "$RSA_KEY"    > keys/signing/rsa.key
+          printf '%s' "$RSA_CERT"   > keys/signing/rsa.cert.pem
+          printf '%s' "$MLDSA_KEY"  > keys/signing/mldsa65.key
+          printf '%s' "$MLDSA_CERT" > keys/signing/mldsa65.cert.pem
+          chmod 600 keys/signing/rsa.key keys/signing/mldsa65.key
+
+      - name: Build Yocto image
         run: make build
+
+      - name: Build & sign RAUC bundle, stage update repo
+        run: make publish
+
+      - name: Stage factory image under a clean name
+        run: |
+          mkdir -p build/factory-stage
+          cp build/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.wic.xz   build/factory-stage/mdmx-os-factory.wic.xz
+          cp build/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.wic.bmap build/factory-stage/mdmx-os-factory.wic.bmap
+
+      - name: Publish update repository
+        run: sudo /home/deploy/deploy.bash build/updates/ downloads/os-updates/
+
+      - name: Publish factory image
+        run: |
+          sudo /home/deploy/deploy.bash build/factory-stage/mdmx-os-factory.wic.xz   downloads/
+          sudo /home/deploy/deploy.bash build/factory-stage/mdmx-os-factory.wic.bmap downloads/
+
+      - name: Scrub signing keys from runner workspace
+        if: always()
+        run: |
+          rm -f keys/signing/rsa.key \
+                keys/signing/rsa.cert.pem \
+                keys/signing/mldsa65.key \
+                keys/signing/mldsa65.cert.pem \
+                keys/signing/trust-bundle.pem

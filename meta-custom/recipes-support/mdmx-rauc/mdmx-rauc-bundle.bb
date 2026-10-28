@@ -8,10 +8,10 @@ assembles build/updates/ for HTTP distribution. The sidecar is what \
 gates unattended acceptance by mdmx-updater on the target; rauc install \
 then re-verifies the embedded CMS on top."
 
-# meta-rauc's sanity handler expects LICENSE to be set — MIT to match
-# the rest of meta-custom.
-LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+# meta-rauc's sanity handler expects LICENSE to be set — BSD-3-Clause
+# to match the rest of meta-custom.
+LICENSE = "BSD-3-Clause"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/BSD-3-Clause;md5=550794465ba0ec5312d6919e203a55f9"
 
 inherit bundle
 

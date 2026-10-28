@@ -25,6 +25,14 @@
 DEPENDS:append = " mdmx-grubenv"
 do_image_wic[depends] += "mdmx-grubenv:do_deploy"
 
+# mdmx-ab.wks.in rawcopies ${IMAGE_LINK_NAME}.ext4 into the rootfsB
+# partition. do_image_ext4 and do_image_wic are peers under the image
+# recipe and bitbake runs them in parallel by default, so without this
+# explicit ordering wic can open() the deploy-dir ext4 before it has
+# been written. IMAGE_TYPEDEP only adds compile-time DEPENDS, not task
+# ordering, so a task-level [depends] is required.
+do_image_wic[depends] += "${PN}:do_image_ext4"
+
 mdmx_install_initrd () {
     # Never install the initrd into the initramfs image itself — the
     # cpio.gz being packaged doesn't exist yet during our own do_rootfs

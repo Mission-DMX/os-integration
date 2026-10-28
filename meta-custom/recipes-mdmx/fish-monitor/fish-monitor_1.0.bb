@@ -2,8 +2,8 @@ SUMMARY = "Wrapper daemon that supervises realtime-fish and integrates it with s
 DESCRIPTION = "Spawns fish in a floating scratchpad foot terminal, restarts it \
 on crash, notifies via libnotify, cleans up stale /tmp/fish.sock files, and \
 exposes a status file for waybar's custom module."
-LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+LICENSE = "BSD-3-Clause"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/BSD-3-Clause;md5=550794465ba0ec5312d6919e203a55f9"
 
 S = "${UNPACKDIR}"
 

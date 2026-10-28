@@ -4,8 +4,8 @@ boot it creates a 4th partition in the free space left on the flashed disk, \
 formats it ext4 with label 'userdata', seeds /home and /var from the rootfs \
 skeleton, and bind-mounts them onto the running root before switch_root."
 
-LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+LICENSE = "BSD-3-Clause"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/BSD-3-Clause;md5=550794465ba0ec5312d6919e203a55f9"
 
 S = "${UNPACKDIR}"
 

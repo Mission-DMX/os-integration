@@ -38,5 +38,13 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 
-[Install]
-WantedBy=multi-user.target
+# Deliberately NO [Install] section. mdmx-updater.timer is what wires
+# this unit into boot (OnBootSec=10min); enabling the service itself as
+# WantedBy=multi-user.target makes it run during the boot sequence, and
+# on first boot — before networkd has brought up any interface — the
+# After=network-online.target wait times out and systemd shows a
+# "[FAILED] Failed to start" line on the console. The timer handles the
+# "run periodically" case; `systemctl start mdmx-updater.service` still
+# works ad-hoc for the console menu's "Check for Updates" entry (no
+# [Install] section is required for that — systemctl start just runs
+# the unit).

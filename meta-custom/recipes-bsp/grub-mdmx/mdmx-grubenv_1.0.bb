@@ -5,8 +5,8 @@ DEPLOY_DIR_IMAGE so IMAGE_EFI_BOOT_FILES copies it onto the ESP alongside \
 grub.cfg. RAUC's rauc-mark-good and rauc install will drive the same \
 variables in-place from userland once RAUC is added."
 
-LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+LICENSE = "BSD-3-Clause"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/BSD-3-Clause;md5=550794465ba0ec5312d6919e203a55f9"
 
 DEPENDS = "grub-native"
 
