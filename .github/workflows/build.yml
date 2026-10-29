@@ -14,6 +14,11 @@ jobs:
       # when a transient GitHub blip causes git to re-auth mid-clone. See
       # main.yml for the longer rationale.
       GIT_TERMINAL_PROMPT: "0"
+      # Cap parallelism on the shared self-hosted runner so the kernel
+      # vmlinux link + sorttable step doesn't exhaust RAM (sorttable
+      # segfaults on MAP_FAILED). See main.yml for the longer rationale.
+      BB_NUMBER_THREADS: "4"
+      PARALLEL_MAKE: "-j 4"
     steps:
       - name: Checkout Repository incl. Submodule
         uses: actions/checkout@v4

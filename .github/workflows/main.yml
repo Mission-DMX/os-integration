@@ -18,6 +18,19 @@ jobs:
       # prompt lets bitbake surface the actual error and fall through to
       # its MIRRORS list cleanly.
       GIT_TERMINAL_PROMPT: "0"
+      # Cap parallelism on the shared self-hosted runner. Poky defaults
+      # BB_NUMBER_THREADS and PARALLEL_MAKE to cpu_count() each, so on a
+      # 16-core box bitbake runs up to 16 tasks × `make -j 16` = ~256
+      # concurrent compile jobs. The kernel vmlinux link peaks at several
+      # GiB of RSS; under that pressure `scripts/sorttable`'s mmap() of
+      # vmlinux returns MAP_FAILED and the tool segfaults (does not check
+      # the return value), killing do_compile for linux-yocto with
+      # "Could not mmap file: vmlinux / Segmentation fault / Failed to
+      # sort kernel tables". Capping both to 4 keeps the kernel link
+      # within budget while still giving decent throughput; raise if the
+      # runner gets more RAM or stops being shared.
+      BB_NUMBER_THREADS: "4"
+      PARALLEL_MAKE: "-j 4"
     steps:
       - name: Checkout Repository incl. Submodule
         uses: actions/checkout@v4
