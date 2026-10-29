@@ -9,6 +9,11 @@ jobs:
   build:
     name: Build image (no publish)
     runs-on: self-hosted
+    env:
+      # Fail fast on git credential prompts instead of hanging on /dev/tty
+      # when a transient GitHub blip causes git to re-auth mid-clone. See
+      # main.yml for the longer rationale.
+      GIT_TERMINAL_PROMPT: "0"
     steps:
       - name: Checkout Repository incl. Submodule
         uses: actions/checkout@v4
@@ -19,6 +24,19 @@ jobs:
         run: |
           rm -rf keys/signing
           ./sign-images.sh --regen-keys --stage-keyring
+
+      - name: Fetch all sources
+        # Three attempts to absorb transient GitHub fetch flakes on the
+        # shared runner; see main.yml for the full rationale.
+        run: |
+          for attempt in 1 2 3; do
+            if make fetch; then
+              exit 0
+            fi
+            echo "::warning ::make fetch failed on attempt $attempt/3; retrying after short pause"
+            [ "$attempt" -lt 3 ] && sleep 30
+          done
+          exit 1
 
       - name: Build Yocto image
         run: make build

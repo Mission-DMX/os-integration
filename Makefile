@@ -1,4 +1,4 @@
-.PHONY: run debug build build-debug build-bundle sign publish clean reset-nvram reset-disk
+.PHONY: run debug fetch build build-debug build-bundle sign publish clean reset-nvram reset-disk
 
 POKY_DIR := poky
 BUILD_DIR := build
@@ -41,6 +41,16 @@ build/conf/bblayers.conf: config/bblayers.conf
 
 build/conf/local.conf: config/local.conf
 	cp config/local.conf build/conf/local.conf
+
+# Pre-fetch every recipe's sources (--runall=fetch) without running
+# compile/package/image tasks. Used by CI to split a hours-long build
+# from the minutes-long network-sensitive phase: a GitHub flake retried
+# over `fetch` costs ~30s, over `build` costs the whole wall-clock of
+# the build so far. Not a dependency of `build` itself — bitbake's own
+# fetch-on-demand is fine for local developer flows, and forcing a
+# fetch pass on every `make build` would double the fetcher work.
+fetch: $(BUILD_DIR)/init build/conf/local.conf build/conf/bblayers.conf $(KEYS_DIR)/trust-bundle.pem
+	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake --runall=fetch core-image-minimal mdmx-rauc-bundle"
 
 build: $(BUILD_DIR)/init build/conf/local.conf build/conf/bblayers.conf $(KEYS_DIR)/trust-bundle.pem
 	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake core-image-minimal"

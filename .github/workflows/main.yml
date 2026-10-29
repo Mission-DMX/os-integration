@@ -9,6 +9,15 @@ jobs:
   build-and-publish:
     name: Build image & publish factory + update repo
     runs-on: self-hosted
+    env:
+      # Fail fast on git credential prompts instead of hanging on /dev/tty.
+      # Several recipes (polkit, …) fetch from github.com; on a transient
+      # GitHub blip git would otherwise prompt for a username ("could not
+      # read Username for 'https://github.com': No such device or address"
+      # in do_fetch), which drowns the real HTTP error. Disabling the
+      # prompt lets bitbake surface the actual error and fall through to
+      # its MIRRORS list cleanly.
+      GIT_TERMINAL_PROMPT: "0"
     steps:
       - name: Checkout Repository incl. Submodule
         uses: actions/checkout@v4
@@ -45,6 +54,24 @@ jobs:
           printf '%s' "$MLDSA_KEY"  > keys/signing/mldsa65.key
           printf '%s' "$MLDSA_CERT" > keys/signing/mldsa65.cert.pem
           chmod 600 keys/signing/rsa.key keys/signing/mldsa65.key
+
+      - name: Fetch all sources
+        # Isolate the network-sensitive phase from the hours-long compile.
+        # Self-hosted runners sharing a NAT'd IP occasionally see GitHub
+        # cut a smart-HTTP response mid-ref-listing ("expected flush after
+        # ref listing" in do_fetch); the Yocto source mirrors don't carry
+        # everything (polkit, …) so a single flake used to stop the whole
+        # build. Three attempts with a short backoff turns a flake into
+        # a non-event; a real breakage still fails the job.
+        run: |
+          for attempt in 1 2 3; do
+            if make fetch; then
+              exit 0
+            fi
+            echo "::warning ::make fetch failed on attempt $attempt/3; retrying after short pause"
+            [ "$attempt" -lt 3 ] && sleep 30
+          done
+          exit 1
 
       - name: Build Yocto image
         run: make build
