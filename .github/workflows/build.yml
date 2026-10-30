@@ -9,6 +9,11 @@ jobs:
   build:
     name: Build image (no publish)
     runs-on: self-hosted
+    # Default job timeout is 360 min (6 h); a cold full Yocto build can
+    # exceed that on the shared runner under the BB_NUMBER_THREADS=4
+    # cap. 48 h ceiling catches real hangs without killing legitimate
+    # long builds. See main.yml for the longer rationale.
+    timeout-minutes: 2880
     env:
       # Fail fast on git credential prompts instead of hanging on /dev/tty
       # when a transient GitHub blip causes git to re-auth mid-clone. See

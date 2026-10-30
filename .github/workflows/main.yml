@@ -9,6 +9,13 @@ jobs:
   build-and-publish:
     name: Build image & publish factory + update repo
     runs-on: self-hosted
+    # Default job timeout is 360 min (6 h), which a cold full Yocto build
+    # of core-image-minimal + the RAUC bundle + sign + publish can exceed
+    # on the shared runner — especially under the BB_NUMBER_THREADS=4
+    # cap. 48 h gives generous headroom for the once-per-main-push build;
+    # a legitimate hang will still be caught by this ceiling, just not by
+    # the stock 6 h cutoff.
+    timeout-minutes: 2880
     env:
       # Fail fast on git credential prompts instead of hanging on /dev/tty.
       # Several recipes (polkit, …) fetch from github.com; on a transient
