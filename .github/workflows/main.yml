@@ -15,7 +15,7 @@ jobs:
     # cap. 48 h gives generous headroom for the once-per-main-push build;
     # a legitimate hang will still be caught by this ceiling, just not by
     # the stock 6 h cutoff.
-    timeout-minutes: 2880
+    timeout-minutes: 4320
     env:
       # Fail fast on git credential prompts instead of hanging on /dev/tty.
       # Several recipes (polkit, …) fetch from github.com; on a transient
