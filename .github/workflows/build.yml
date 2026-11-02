@@ -13,17 +13,12 @@ jobs:
     # exceed that on the shared runner under the BB_NUMBER_THREADS=4
     # cap. 48 h ceiling catches real hangs without killing legitimate
     # long builds. See main.yml for the longer rationale.
-    timeout-minutes: 2880
+    timeout-minutes: 4320
     env:
       # Fail fast on git credential prompts instead of hanging on /dev/tty
       # when a transient GitHub blip causes git to re-auth mid-clone. See
       # main.yml for the longer rationale.
       GIT_TERMINAL_PROMPT: "0"
-      # Cap parallelism on the shared self-hosted runner so the kernel
-      # vmlinux link + sorttable step doesn't exhaust RAM (sorttable
-      # segfaults on MAP_FAILED). See main.yml for the longer rationale.
-      BB_NUMBER_THREADS: "4"
-      PARALLEL_MAKE: "-j 4"
     steps:
       - name: Checkout Repository incl. Submodule
         uses: actions/checkout@v4
@@ -34,6 +29,20 @@ jobs:
         run: |
           rm -rf keys/signing
           ./sign-images.sh --regen-keys --stage-keyring
+
+      - name: Cap parallelism in local.conf for CI
+        # See main.yml for the longer rationale. PARALLEL_MAKE isn't in
+        # bitbake's default env passthrough, so a workflow-level env var
+        # gets stripped — appending to local.conf is the only way the
+        # cap actually sticks.
+        run: |
+          make build/conf/local.conf
+          cat >> build/conf/local.conf <<'EOF'
+
+          # --- CI-only caps, injected by .github/workflows/build.yml ---
+          BB_NUMBER_THREADS = "4"
+          PARALLEL_MAKE = "-j 4"
+          EOF
 
       - name: Fetch all sources
         # Three attempts to absorb transient GitHub fetch flakes on the
