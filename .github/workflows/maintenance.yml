@@ -1,0 +1,43 @@
+name: Weekly CI cache maintenance
+
+on:
+  schedule:
+    # Sundays at 03:00 UTC. Cadence rationale: the upstream source URIs
+    # across the ~400 recipes in the dep tree don't drift much over a
+    # week, so DL_DIR cache hits dominate the fetch cost of each CI
+    # build. A weekly purge sheds any tarballs that have gone stale
+    # (SRC_URI bumped, upstream mirror moved, checksum mismatch left a
+    # half-file around) without giving up most of the hit rate. 03:00
+    # UTC is chosen to miss weekday push bursts on the shared runner.
+    - cron: '0 3 * * 0'
+  # Manual trigger: run this when a stale-cache state is suspected
+  # (e.g. a recipe's SRC_URI was changed and the old tarball is still
+  # being resurrected from DL_DIR).
+  workflow_dispatch:
+
+jobs:
+  purge:
+    name: Purge shared DL_DIR and build tree
+    runs-on: self-hosted
+    # Short cap: this is `rm -rf` on two directory trees; if it's still
+    # running after 30 minutes something is badly wrong (NFS unmounted
+    # mid-run, etc.).
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Repository
+        # No submodules — all we need from the checkout is the Makefile
+        # for `make clean`.
+        uses: actions/checkout@v4
+
+      - name: Purge shared DL_DIR
+        # Hard-coded path mirrors the DL_DIR line injected by main.yml
+        # and build.yml. Keep the two in sync when either moves.
+        run: rm -rf /var/tmp/mdmx-yocto-dl
+
+      - name: make clean
+        # `make clean` is defined as `rm -rf build/` and intentionally
+        # does NOT touch DL_DIR — local developers may want to keep
+        # their download cache across `make clean` runs. The weekly
+        # purge is the explicit "reset everything" lane, so we call
+        # both actions here side by side.
+        run: make clean

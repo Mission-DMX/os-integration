@@ -39,12 +39,24 @@ jobs:
           rm -rf keys/signing
           ./sign-images.sh --regen-keys --stage-keyring
 
+      - name: Initialize build dir and inject CI overrides into local.conf
+        # Done BEFORE fetch so the shared DL_DIR is in place when the
+        # fetcher runs. See main.yml for the longer rationale (DL_DIR
+        # cache + parallelism caps, injected on top of the checked-in
+        # local.conf after `make build/init` has materialized build/conf/).
+        run: |
+          make build/init build/conf/local.conf build/conf/bblayers.conf
+          cat >> build/conf/local.conf <<'EOF'
+
+          # --- CI-only overrides, injected by .github/workflows/build.yml ---
+          DL_DIR = "/var/tmp/mdmx-yocto-dl"
+          BB_NUMBER_THREADS = "4"
+          PARALLEL_MAKE = "-j 4"
+          EOF
+
       - name: Fetch all sources
         # Three attempts to absorb transient GitHub fetch flakes on the
-        # shared runner; see main.yml for the full rationale. Also acts
-        # as the implicit init step — the `fetch` target depends on
-        # $(BUILD_DIR)/init which creates build/conf/, so the next step
-        # can safely append to build/conf/local.conf.
+        # shared runner; see main.yml for the full rationale.
         run: |
           for attempt in 1 2 3; do
             if make fetch; then
@@ -54,20 +66,6 @@ jobs:
             [ "$attempt" -lt 3 ] && sleep 30
           done
           exit 1
-
-      - name: Cap parallelism in local.conf for CI
-        # See main.yml for the longer rationale. PARALLEL_MAKE isn't in
-        # bitbake's default env passthrough, so a workflow-level env var
-        # gets stripped — appending to local.conf is the only way the
-        # cap actually sticks. Runs after fetch because that's the step
-        # that triggers the build-dir init.
-        run: |
-          cat >> build/conf/local.conf <<'EOF'
-
-          # --- CI-only caps, injected by .github/workflows/build.yml ---
-          BB_NUMBER_THREADS = "4"
-          PARALLEL_MAKE = "-j 4"
-          EOF
 
       - name: Build Yocto image
         run: make build

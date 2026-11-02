@@ -79,6 +79,42 @@ jobs:
           printf '%s' "$MLDSA_CERT" > keys/signing/mldsa65.cert.pem
           chmod 600 keys/signing/rsa.key keys/signing/mldsa65.key
 
+      - name: Initialize build dir and inject CI overrides into local.conf
+        # Done BEFORE fetch so the shared DL_DIR is in place when the
+        # fetcher runs; otherwise the fetch step would populate the
+        # workspace-local build/downloads/ and the shared cache would
+        # stay empty.
+        #
+        # `make build/init` runs the Makefile's $(BUILD_DIR)/init
+        # recipe — oe-init-build-env (creates build/conf/) + apparmor
+        # hint + stripping the stock local.conf/bblayers.conf. The
+        # following two targets then cp our checked-in configs into
+        # place. After that we append the CI-only overrides on top:
+        #
+        #   DL_DIR          — shared across CI runs; purged weekly by
+        #                     .github/workflows/maintenance.yml.
+        #                     Intentionally NOT touched by `make clean`
+        #                     (which runs between every CI build and
+        #                     also from local dev workstations), so the
+        #                     cache survives individual run boundaries
+        #                     and only resets on the maintenance cadence.
+        #
+        #   BB_NUMBER_THREADS / PARALLEL_MAKE — cap parallelism to keep
+        #                     the kernel link within budget on the
+        #                     shared runner. Env-level overrides don't
+        #                     work for PARALLEL_MAKE (not in bitbake's
+        #                     default env passthrough), so local.conf
+        #                     is the authoritative knob.
+        run: |
+          make build/init build/conf/local.conf build/conf/bblayers.conf
+          cat >> build/conf/local.conf <<'EOF'
+
+          # --- CI-only overrides, injected by .github/workflows/main.yml ---
+          DL_DIR = "/var/tmp/mdmx-yocto-dl"
+          BB_NUMBER_THREADS = "4"
+          PARALLEL_MAKE = "-j 4"
+          EOF
+
       - name: Fetch all sources
         # Isolate the network-sensitive phase from the hours-long compile.
         # Self-hosted runners sharing a NAT'd IP occasionally see GitHub
@@ -87,12 +123,6 @@ jobs:
         # everything (polkit, …) so a single flake used to stop the whole
         # build. Three attempts with a short backoff turns a flake into
         # a non-event; a real breakage still fails the job.
-        #
-        # Also serves as the implicit init step: `make fetch` depends on
-        # $(BUILD_DIR)/init, which runs `oe-init-build-env` and creates
-        # build/conf/. That lets the next step append CI overrides to
-        # build/conf/local.conf without having to also seed the directory
-        # by hand.
         run: |
           for attempt in 1 2 3; do
             if make fetch; then
@@ -102,26 +132,6 @@ jobs:
             [ "$attempt" -lt 3 ] && sleep 30
           done
           exit 1
-
-      - name: Cap parallelism in local.conf for CI
-        # Poky defaults both BB_NUMBER_THREADS and PARALLEL_MAKE to
-        # cpu_count(), so on a 16-core runner the kernel compile forks
-        # `make -j 16` by default. Env-level overrides don't help:
-        # BB_NUMBER_THREADS is in bitbake's default env passthrough but
-        # PARALLEL_MAKE is NOT, so a workflow-level `PARALLEL_MAKE=-j 4`
-        # gets stripped before bitbake sees it. Appending to local.conf
-        # is authoritative — bitbake re-reads it on the next invocation.
-        # Runs AFTER `make fetch` because that's the step that triggers
-        # $(BUILD_DIR)/init and materializes build/conf/; the fetch pass
-        # itself is I/O-bound so running it with uncapped parallelism is
-        # fine.
-        run: |
-          cat >> build/conf/local.conf <<'EOF'
-
-          # --- CI-only caps, injected by .github/workflows/main.yml ---
-          BB_NUMBER_THREADS = "4"
-          PARALLEL_MAKE = "-j 4"
-          EOF
 
       - name: Build Yocto image
         run: make build
