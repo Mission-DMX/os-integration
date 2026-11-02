@@ -31,6 +31,23 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Wipe previous build state
+        # The self-hosted actions-runner workspace persists between
+        # jobs: build/ is gitignored, so `actions/checkout`'s default
+        # `git clean` leaves it in place. That means stale state from a
+        # previous run — half-populated DL_DIR, bitbake stamps that no
+        # longer match reality, cached task metadata referencing files
+        # that have since been pruned — can leak into the current run
+        # and manifest as surprising late-stage failures (e.g. do_fetch
+        # being skipped on a stamp hit while the tarball is actually
+        # missing, so do_unpack crashes with "No such file or
+        # directory"). A full `make clean` (which is `rm -rf build`)
+        # before any other setup guarantees a cold start every time.
+        # Matches the no-stale-artefacts posture already applied to
+        # DL_DIR; the 48 h job timeout covers the resulting full cold
+        # rebuild.
+        run: make clean
+
       - name: Fail fast if any signing secret is missing
         env:
           RSA_KEY:    ${{ secrets.MDMX_RSA_SIGNING_KEY   }}

@@ -25,6 +25,15 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Wipe previous build state
+        # See main.yml for the longer rationale: build/ is gitignored
+        # and the actions-runner workspace persists between jobs, so
+        # stale sstate / stamps / caches can leak into this run and
+        # confuse bitbake into skipping tasks whose outputs have since
+        # gone missing. `make clean` (= `rm -rf build`) resets to a
+        # known-empty state.
+        run: make clean
+
       - name: Regenerate disposable dev signing keys
         run: |
           rm -rf keys/signing

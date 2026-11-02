@@ -49,22 +49,8 @@ build/conf/local.conf: config/local.conf
 # the build so far. Not a dependency of `build` itself — bitbake's own
 # fetch-on-demand is fine for local developer flows, and forcing a
 # fetch pass on every `make build` would double the fetcher work.
-#
-# --force is required alongside --runall: on a persistent self-hosted
-# workspace (actions-runner doesn't clean build/ between jobs — it's
-# gitignored and `git clean` leaves it alone), do_fetch stamps from a
-# prior partially-successful run can linger in build/tmp/stamps/ even
-# when the matching tarballs under build/downloads/ have gone missing.
-# Bitbake sees "stamp present, task done" and skips do_fetch (see
-# poky/bitbake/lib/bb/runqueue.py:1017-1045 — --runall only invalidates
-# stamps when --force is also set); the subsequent do_unpack then
-# crashes with "No such file or directory" on the missing tarball.
-# --force invalidates every do_fetch stamp in the dep tree, re-running
-# do_fetch — which is itself idempotent (it skips the HTTP transfer
-# when the tarball is already in DL_DIR with the right checksum), so
-# the steady-state cost is just a verification pass.
 fetch: $(BUILD_DIR)/init build/conf/local.conf build/conf/bblayers.conf $(KEYS_DIR)/trust-bundle.pem
-	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake --force --runall=fetch core-image-minimal mdmx-rauc-bundle"
+	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake --runall=fetch core-image-minimal mdmx-rauc-bundle"
 
 build: $(BUILD_DIR)/init build/conf/local.conf build/conf/bblayers.conf $(KEYS_DIR)/trust-bundle.pem
 	bash -c "cd $(POKY_DIR) && source oe-init-build-env ../$(BUILD_DIR) && bitbake core-image-minimal"
