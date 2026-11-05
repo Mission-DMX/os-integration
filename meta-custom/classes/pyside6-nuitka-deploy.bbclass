@@ -123,8 +123,18 @@ python_venv_env() {
 pyside6_prepare_venv() {
     mkdir -p ${S}/.venv/bin ${S}/.pdm-runner
 
+    # Upper bound pinned to <2.28 (not <2.29) because pdm 2.28.x pulls in
+    # a second generation of httpx/httpcore (packaged on PyPI as the
+    # `httpx2` / `httpcore2` wheels) alongside the first. PDMPyPIClient
+    # subclasses httpx.Client but the resolver installs both lineages
+    # into the same .pdm-runner environment; when `super()` walks the
+    # MRO at resolve time it hits a `Client` from the other generation
+    # and raises `TypeError: super(type, obj): obj (instance of
+    # PDMPyPIClient) is not an instance or subtype of type (Client)`.
+    # 2.27.x is the last series that depends only on single-generation
+    # httpx; bump this bound back up once upstream pdm settles on one.
     ${STAGING_BINDIR_NATIVE}/python3-native/python3 -m pip install \
-        --no-cache-dir --target ${S}/.pdm-runner 'pdm<2.29'
+        --no-cache-dir --target ${S}/.pdm-runner 'pdm<2.28'
 
     # Lock on demand: upstream repos that commit pdm.lock (editor) skip
     # this; recipes that vendor only pyproject.toml (explorer) need a
