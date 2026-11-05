@@ -123,18 +123,28 @@ python_venv_env() {
 pyside6_prepare_venv() {
     mkdir -p ${S}/.venv/bin ${S}/.pdm-runner
 
-    # Upper bound pinned to <2.28 (not <2.29) because pdm 2.28.x pulls in
-    # a second generation of httpx/httpcore (packaged on PyPI as the
-    # `httpx2` / `httpcore2` wheels) alongside the first. PDMPyPIClient
-    # subclasses httpx.Client but the resolver installs both lineages
-    # into the same .pdm-runner environment; when `super()` walks the
-    # MRO at resolve time it hits a `Client` from the other generation
-    # and raises `TypeError: super(type, obj): obj (instance of
-    # PDMPyPIClient) is not an instance or subtype of type (Client)`.
-    # 2.27.x is the last series that depends only on single-generation
-    # httpx; bump this bound back up once upstream pdm settles on one.
+    # Two pins, not one:
+    #
+    # - `pdm<2.28`      — the <2.29 default used to be fine; 2.28.x began
+    #                     pulling in a second-generation httpx fork
+    #                     (packaged on PyPI as `httpx2` / `httpcore2`)
+    #                     through its resolver code path.
+    # - `unearth<0.19`  — pdm's own dep `unearth>=0.17.5` is unbounded
+    #                     above, and `unearth 0.19.0` is where unearth
+    #                     itself switched from `httpx` to `httpx2`.
+    #                     Without this pin, pip picks unearth 0.19 for
+    #                     any pdm version, both httpx lineages end up
+    #                     installed, and PDMPyPIClient (an httpx.Client
+    #                     subclass) crashes at resolve time with
+    #                     `TypeError: super(type, obj): obj (instance of
+    #                     PDMPyPIClient) is not an instance or subtype
+    #                     of type (Client)`.
+    #
+    # Together these keep the whole httpx/httpcore stack on the first
+    # generation. Bump both bounds back up once upstream pdm + unearth
+    # settle on a single generation again.
     ${STAGING_BINDIR_NATIVE}/python3-native/python3 -m pip install \
-        --no-cache-dir --target ${S}/.pdm-runner 'pdm<2.28'
+        --no-cache-dir --target ${S}/.pdm-runner 'pdm<2.28' 'unearth<0.19'
 
     # Lock on demand: upstream repos that commit pdm.lock (editor) skip
     # this; recipes that vendor only pyproject.toml (explorer) need a
