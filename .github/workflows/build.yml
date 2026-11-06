@@ -68,7 +68,19 @@ jobs:
           exit 1
 
       - name: Build Yocto image
-        run: make build
+        # Three attempts to absorb transient faults on the shared
+        # runner; bitbake stamps + persistent sstate mean a retry only
+        # re-runs the task that died. See main.yml for the longer
+        # rationale.
+        run: |
+          for attempt in 1 2 3; do
+            if make build; then
+              exit 0
+            fi
+            echo "::warning ::make build failed on attempt $attempt/3; retrying after short pause"
+            [ "$attempt" -lt 3 ] && sleep 30
+          done
+          exit 1
 
       - name: Build & sign RAUC bundle (local artifacts only)
         run: make publish

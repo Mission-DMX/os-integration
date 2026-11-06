@@ -123,12 +123,16 @@ python_venv_env() {
 pyside6_prepare_venv() {
     mkdir -p ${S}/.venv/bin ${S}/.pdm-runner
 
-    # Two pins, not one:
+    # Three pins, all layered defences against a particularly churny week
+    # on PyPI for the pdm stack (several major versions of pdm, unearth,
+    # hishel, pbs-installer, certifi all released within days of each
+    # other). pdm's own metadata leaves most of its transitive deps
+    # unbounded upward, so pip picks the freshest matching version every
+    # time and keeps landing us on a new combination of broken things.
     #
-    # - `pdm<2.28`      — the <2.29 default used to be fine; 2.28.x began
-    #                     pulling in a second-generation httpx fork
-    #                     (packaged on PyPI as `httpx2` / `httpcore2`)
-    #                     through its resolver code path.
+    # - `pdm<2.28`      — 2.28.x began pulling in a second-generation
+    #                     httpx fork (packaged on PyPI as `httpx2` /
+    #                     `httpcore2`) through its resolver code path.
     # - `unearth<0.19`  — pdm's own dep `unearth>=0.17.5` is unbounded
     #                     above, and `unearth 0.19.0` is where unearth
     #                     itself switched from `httpx` to `httpx2`.
@@ -139,12 +143,23 @@ pyside6_prepare_venv() {
     #                     `TypeError: super(type, obj): obj (instance of
     #                     PDMPyPIClient) is not an instance or subtype
     #                     of type (Client)`.
+    # - `hishel<2`      — pdm 2.27 imports `hishel.SyncSqliteStorage`,
+    #                     which hishel 2.0.0 renamed/removed. pdm's
+    #                     metadata only says `hishel>=1.0.0`, so pip
+    #                     picks the fresh 2.0.0 and `do_compile` fails
+    #                     with `AttributeError: module 'hishel' has no
+    #                     attribute 'SyncSqliteStorage'` at pdm's first
+    #                     resolve step. Pin to the 1.x line that pdm's
+    #                     own code was written against.
     #
-    # Together these keep the whole httpx/httpcore stack on the first
-    # generation. Bump both bounds back up once upstream pdm + unearth
-    # settle on a single generation again.
+    # If a future failure surfaces a *fourth* trap in the same stack,
+    # consider committing a full constraints file alongside the recipe
+    # and installing with `-c constraints.txt` instead of extending this
+    # list again — at that point the list of pins becomes the lockfile
+    # in all but name.
     ${STAGING_BINDIR_NATIVE}/python3-native/python3 -m pip install \
-        --no-cache-dir --target ${S}/.pdm-runner 'pdm<2.28' 'unearth<0.19'
+        --no-cache-dir --target ${S}/.pdm-runner \
+        'pdm<2.28' 'unearth<0.19' 'hishel<2'
 
     # Lock on demand: upstream repos that commit pdm.lock (editor) skip
     # this; recipes that vendor only pyproject.toml (explorer) need a

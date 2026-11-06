@@ -134,7 +134,25 @@ jobs:
           exit 1
 
       - name: Build Yocto image
-        run: make build
+        # Three attempts, with the same rationale as the fetch retry
+        # above: transient faults (sstate server blips, a fallocate on a
+        # busy host returning EAGAIN, a one-off PyPI resolution landing
+        # on a broken pin before the pins we care about take effect, …)
+        # happen regularly on a shared self-hosted runner. bitbake task
+        # stamps + the persistent sstate cache mean a retry picks up
+        # where the previous attempt died — only the single failed task
+        # (and anything downstream of it) re-runs. A real breakage will
+        # fail all three attempts at the same task and still surface as
+        # a job failure; a flake clears on attempt two or three.
+        run: |
+          for attempt in 1 2 3; do
+            if make build; then
+              exit 0
+            fi
+            echo "::warning ::make build failed on attempt $attempt/3; retrying after short pause"
+            [ "$attempt" -lt 3 ] && sleep 30
+          done
+          exit 1
 
       - name: Build & sign RAUC bundle, stage update repo
         run: make publish
