@@ -164,7 +164,15 @@ jobs:
           cp build/tmp/deploy/images/qemux86-64/core-image-minimal-qemux86-64.rootfs.wic.bmap build/factory-stage/mdmx-os-factory.wic.bmap
 
       - name: Publish update repository
-        run: sudo /home/deploy/deploy.bash build/updates/ downloads/os-updates/
+        # deploy.bash copies the source directory into the destination
+        # preserving its basename (compare the factory-image steps below
+        # which pass individual files). Staging as build/os-updates/ and
+        # pushing into downloads/ therefore lands files at
+        # downloads/os-updates/manifest.json — what mdmx-updater on the
+        # target fetches. The earlier form (build/updates/ →
+        # downloads/os-updates/) produced a nested
+        # downloads/os-updates/updates/manifest.json and 404'd the client.
+        run: sudo /home/deploy/deploy.bash build/os-updates/ downloads/
 
       - name: Publish factory image
         run: |

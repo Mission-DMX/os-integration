@@ -17,6 +17,10 @@ Group=user
 # also holding tty1, driving a restart loop).
 RuntimeDirectory=sway
 RuntimeDirectoryMode=0700
+# Without this, systemd leaves the service's CWD at /, which sway and
+# every child process (foot, the shells it spawns, …) inherit — so a
+# freshly launched terminal opens in / instead of the user's home.
+WorkingDirectory=/home/user
 Environment=HOME=/home/user
 Environment=LANG=en_US.UTF-8
 # Point XDG_RUNTIME_DIR at /run/sway rather than /run/user/1000 so we

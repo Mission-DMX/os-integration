@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Assemble build/updates/ for 1:1 upload to the OS update HTTP root.
+"""Assemble build/os-updates/ for 1:1 upload to the OS update HTTP root.
 
 Called by ``make publish``. Reads the RAUC bundle(s) written by the
 ``mdmx-rauc-bundle`` recipe out of the Yocto deploy dir, copies each
 one — plus its ``.sig`` sidecar produced by ``sign-images.sh`` and the
-hybrid trust bundle — into ``build/updates/``, and emits a
+hybrid trust bundle — into ``build/os-updates/``, and emits a
 ``manifest.json`` describing what's on offer.
 
 Schema (mirrors what mdmx-updater.py on the target expects)::
@@ -161,7 +161,7 @@ def main() -> int:
         print(f"publish: staged trust-bundle.pem for operator reference")
 
     print(f"publish: {len(staged)} bundle(s) ready in {updates_dir}")
-    print(f"publish: rsync -a {updates_dir}/ user@server:/var/www/os-updates/")
+    print(f"publish: rsync -a {updates_dir}/ user@server:/var/www/downloads/os-updates/")
     return 0
 
 

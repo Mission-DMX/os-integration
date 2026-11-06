@@ -3,7 +3,13 @@
 POKY_DIR := poky
 BUILD_DIR := build
 DEPLOY_DIR := $(BUILD_DIR)/tmp/deploy/images/qemux86-64
-UPDATES_DIR := $(BUILD_DIR)/updates
+# Named `os-updates` (not `updates`) so the directory's basename matches
+# the HTTP root segment it's deployed under — deploy.bash copies the
+# source directory into the destination preserving its name, so staging
+# as build/os-updates/ makes the server path land at downloads/os-updates/
+# (manifest.json + bundles directly under it) rather than a nested
+# downloads/os-updates/updates/.
+UPDATES_DIR := $(BUILD_DIR)/os-updates
 KEYS_DIR := keys/signing
 
 # Bridge on the host that qemu should attach the guest NIC to.
@@ -86,7 +92,7 @@ $(KEYS_DIR)/trust-bundle.pem:
 sign: build-bundle
 	./sign-images.sh
 
-# Assemble build/updates/ from the signed RAUC bundle(s) and a
+# Assemble build/os-updates/ from the signed RAUC bundle(s) and a
 # manifest.json keyed on /etc/mdmx-build-timestamp. The directory can
 # be rsync'd 1:1 onto the update server's document root — no path
 # rewriting needed.
