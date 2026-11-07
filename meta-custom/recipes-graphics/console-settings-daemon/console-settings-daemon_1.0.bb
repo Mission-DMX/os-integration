@@ -84,7 +84,20 @@ RDEPENDS:${PN} = " \
     systemd \
     tzdata \
     ttf-dejavu-sans \
+    ttf-hack \
+    python3-netclient \
+    python3-compression \
+    python3-threading \
+    fontconfig-utils \
+    cabextract \
 "
+# ttf-hack / python3-netclient+compression+threading / fontconfig-utils /
+# cabextract back the optional first-boot font download page. The daemon
+# fetches tarballs into ~/.local/share/fonts/<group>/ and runs fc-cache;
+# cabextract handles Microsoft's .exe self-extracting cabs for the Core
+# Fonts row. ttf-hack is listed here (rather than only via foot's RDEPEND)
+# so the wizard's own GTK windows can also render in Hack when the user
+# selects a non-latin keyboard layout before the fonts page has run.
 
 do_install() {
     install -d ${D}${bindir}

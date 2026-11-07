@@ -1,0 +1,18 @@
+# MissionDMX — raw USB access for DMX adapters.
+#
+# Enttec DMX USB Pro ships with the stock FTDI FT232 VID:PID 0403:6001
+# (confirmed against the Project-Editor sources in
+# src/controller/file/serializing/universe_serialization.py:71 and
+# src/view/dialogs/universe_dialog.py:23-24). fish talks to it via
+# libftdi1 + libusb1 (see meta-custom/recipes-mdmx/realtime-fish/
+# realtime-fish_git.bb:35-55), i.e. by opening /dev/bus/usb/<bus>/<dev>
+# directly rather than a /dev/ttyUSB* serial node — so chown'ing the
+# raw USB node to dialout is what actually unblocks unprivileged fish.
+# MODE=0660 + GROUP="dialout" matches mdmx-user.bb:18-19 which already
+# puts the UI 'user' in dialout. TAG+="uaccess" lets logind-style
+# sessions also claim it if one ever runs here.
+#
+# Side-effect note: this VID:PID is the generic FT232 pair, shared with
+# other FTDI serial dongles. On this appliance fish is the only client
+# of the FTDI stack, so broadening access to all FT232 devices is fine.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", GROUP="dialout", MODE="0660", TAG+="uaccess"

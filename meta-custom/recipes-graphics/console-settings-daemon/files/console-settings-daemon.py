@@ -25,11 +25,17 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
+import threading
+import urllib.error
+import urllib.request
+import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import i3ipc
 
@@ -48,8 +54,147 @@ ID_PATH_RE = re.compile(r"^[A-Za-z0-9:._\-]+$")
 # IANA timezone IDs: area/location, optionally with a sub-location
 # ("America/Indiana/Indianapolis"). Also accept "UTC".
 TIMEZONE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_+\-]*(?:/[A-Za-z][A-Za-z0-9_+\-]*){0,2}$")
+# Font-group ids are alnum/underscore. Used as INI keys and as directory
+# names under ~/.local/share/fonts/, so keep the character set tight.
+FONT_GROUP_ID_RE = re.compile(r"^[a-z0-9_]+$")
+
+FONTS_DIR = Path.home() / ".local" / "share" / "fonts"
+# 1 MiB — same chunk size mdmx-updater uses. Balances TCP throughput
+# against UI update cadence.
+FONT_DOWNLOAD_CHUNK = 1024 * 1024
 
 logger = logging.getLogger("console-settings")
+
+
+# ---------- font group manifest ----------
+
+# Hardcoded set of downloadable font groups the first-boot wizard offers.
+# Each group is one row in the UI and one directory under
+# ~/.local/share/fonts/. Packages within a group are downloaded
+# sequentially; a per-package failure skips that package but does not
+# abort the group. URL rot is handled the same way — if a release URL
+# moves, the user just sees "Skipped X: HTTP 404" and the rest install.
+#
+# `format` is one of: "zip", "tar.gz", "exe-cab" (Microsoft SFX cab,
+# needs `cabextract`), "tar.gz-full" (tar.gz walked recursively keeping
+# every *.ttf / *.otf — used for the Google Fonts repo tarball).
+FONT_GROUPS: List[Dict] = [
+    {
+        "id": "coding",
+        "label": "Coding fonts",
+        "description": "Fira Code, JetBrains Mono, Cascadia Code, IBM Plex Mono",
+        "approx_size": "~20 MB",
+        "eula": None,
+        "packages": [
+            {
+                "name": "Fira Code",
+                "url": "https://github.com/tonsky/FiraCode/releases/download/6.2/Fira_Code_v6.2.zip",
+                "format": "zip",
+            },
+            {
+                "name": "JetBrains Mono",
+                "url": "https://download.jetbrains.com/fonts/JetBrainsMono-2.304.zip",
+                "format": "zip",
+            },
+            {
+                "name": "Cascadia Code",
+                "url": "https://github.com/microsoft/cascadia-code/releases/download/v2407.24/CascadiaCode-2407.24.zip",
+                "format": "zip",
+            },
+            {
+                "name": "IBM Plex Mono",
+                "url": "https://github.com/IBM/plex/releases/download/v6.4.2/TrueType.zip",
+                "format": "zip",
+            },
+        ],
+    },
+    {
+        "id": "proportional",
+        "label": "Proportional families",
+        "description": "Inter, IBM Plex Sans, Noto Sans/Serif/Mono core",
+        "approx_size": "~40 MB",
+        "eula": None,
+        "packages": [
+            {
+                "name": "Inter",
+                "url": "https://github.com/rsms/inter/releases/download/v4.0/Inter-4.0.zip",
+                "format": "zip",
+            },
+            {
+                "name": "IBM Plex (full TrueType)",
+                "url": "https://github.com/IBM/plex/releases/download/v6.4.2/TrueType.zip",
+                "format": "zip",
+            },
+            {
+                "name": "Noto Sans",
+                "url": "https://notofonts.github.io/latin-greek-cyrillic/fonts/NotoSans/googlefonts/ttf/NotoSans%5Bwdth%2Cwght%5D.ttf",
+                "format": "raw-ttf",
+            },
+            {
+                "name": "Noto Serif",
+                "url": "https://notofonts.github.io/latin-greek-cyrillic/fonts/NotoSerif/googlefonts/ttf/NotoSerif%5Bwdth%2Cwght%5D.ttf",
+                "format": "raw-ttf",
+            },
+            {
+                "name": "Noto Sans Mono",
+                "url": "https://notofonts.github.io/latin-greek-cyrillic/fonts/NotoSansMono/googlefonts/ttf/NotoSansMono%5Bwdth%2Cwght%5D.ttf",
+                "format": "raw-ttf",
+            },
+        ],
+    },
+    {
+        "id": "debian_free",
+        "label": "Debian free fonts bundle",
+        "description": "URW Nimbus Sans / Mono / Roman (fonts-freefont-ttf)",
+        "approx_size": "~3 MB",
+        "eula": None,
+        "packages": [
+            {
+                "name": "Debian fonts-freefont-ttf",
+                # Debian salsa serves the source tarball at a stable snapshot URL.
+                "url": "https://salsa.debian.org/fonts-team/fonts-freefont/-/archive/debian/20120503-11/fonts-freefont-debian-20120503-11.tar.gz",
+                "format": "tar.gz",
+            },
+        ],
+    },
+    {
+        "id": "microsoft_core",
+        "label": "Microsoft Core Fonts for the Web",
+        "description": "Arial, Verdana, Times, Courier, Comic Sans, Georgia, "
+                       "Impact, Trebuchet, Andale Mono, Webdings",
+        "approx_size": "~8 MB",
+        "eula": "https://corefonts.sourceforge.net/eula.htm",
+        "packages": [
+            {"name": "Andale Mono",  "url": "https://downloads.sourceforge.net/corefonts/andale32.exe", "format": "exe-cab"},
+            {"name": "Arial",        "url": "https://downloads.sourceforge.net/corefonts/arial32.exe",  "format": "exe-cab"},
+            {"name": "Arial Black",  "url": "https://downloads.sourceforge.net/corefonts/arialb32.exe", "format": "exe-cab"},
+            {"name": "Comic Sans",   "url": "https://downloads.sourceforge.net/corefonts/comic32.exe",  "format": "exe-cab"},
+            {"name": "Courier New",  "url": "https://downloads.sourceforge.net/corefonts/courie32.exe", "format": "exe-cab"},
+            {"name": "Georgia",      "url": "https://downloads.sourceforge.net/corefonts/georgi32.exe", "format": "exe-cab"},
+            {"name": "Impact",       "url": "https://downloads.sourceforge.net/corefonts/impact32.exe", "format": "exe-cab"},
+            {"name": "Times New Roman", "url": "https://downloads.sourceforge.net/corefonts/times32.exe", "format": "exe-cab"},
+            {"name": "Trebuchet",    "url": "https://downloads.sourceforge.net/corefonts/trebuc32.exe", "format": "exe-cab"},
+            {"name": "Verdana",      "url": "https://downloads.sourceforge.net/corefonts/verdan32.exe", "format": "exe-cab"},
+            {"name": "Webdings",     "url": "https://downloads.sourceforge.net/corefonts/webdin32.exe", "format": "exe-cab"},
+        ],
+    },
+    {
+        "id": "google",
+        "label": "Google Fonts (full collection)",
+        "description": "Entire Google Fonts repository — 1.3 GB download, "
+                       "~3 GB on disk. Takes several minutes even on fast "
+                       "links. Pick this only if you want everything.",
+        "approx_size": "~1.3 GB",
+        "eula": None,
+        "packages": [
+            {
+                "name": "Google Fonts",
+                "url": "https://github.com/google/fonts/archive/refs/heads/main.tar.gz",
+                "format": "tar.gz-full",
+            },
+        ],
+    },
+]
 
 
 # ---------- config ----------
@@ -123,6 +268,42 @@ def parse_touch_map(items: Dict[str, str]) -> Dict[str, str]:
         if key.startswith(TOUCH_KEY_PREFIX):
             out[key[len(TOUCH_KEY_PREFIX):]] = value
     return out
+
+
+def get_fonts_section(cfg: configparser.ConfigParser) -> Dict[str, str]:
+    if not cfg.has_section("fonts"):
+        return {}
+    return dict(cfg.items("fonts"))
+
+
+def mark_fonts_installed(
+    cfg: configparser.ConfigParser, group_ids: List[str]
+) -> None:
+    """Record which font groups the wizard installed (or user opted out of).
+
+    `group_ids` is additive — existing entries survive so a reconfigure
+    pass doesn't lose history. "skipped" also counts as a terminal state
+    and prevents the wizard from asking again unless --reconfigure.
+    """
+    if not cfg.has_section("fonts"):
+        cfg.add_section("fonts")
+    for gid in group_ids:
+        if not FONT_GROUP_ID_RE.match(gid):
+            continue
+        cfg.set("fonts", gid, "installed")
+
+
+def mark_fonts_decision_made(cfg: configparser.ConfigParser) -> None:
+    """Flag the wizard's font page as having been shown.
+
+    Without this, a user who skips all rows on first boot would see the
+    page again on the next wizard run (triggered e.g. by a new
+    touchscreen). The flag lives as `_decided = yes` under [fonts] so
+    an explicit `--reconfigure` still re-opens the page.
+    """
+    if not cfg.has_section("fonts"):
+        cfg.add_section("fonts")
+    cfg.set("fonts", "_decided", "yes")
 
 
 # ---------- timezone ----------
@@ -471,11 +652,309 @@ button.touchtarget {
     min-width: 480px;
     min-height: 360px;
 }
+
+/* GTK's default theme paints list/row/scrolledwindow/textview/progressbar
+   white, which makes the white label text in the fonts wizard invisible
+   against the dark window. Force the dark palette onto the widgets used
+   by _run_fonts_* so the page actually reads. */
+scrolledwindow,
+scrolledwindow viewport,
+list,
+list row,
+textview,
+textview text {
+    background-color: rgba(10, 10, 30, 0.98);
+    color: #ffffff;
+}
+list row:selected,
+list row:hover { background-color: #2d2d54; }
+checkbutton { color: #ffffff; }
+checkbutton check {
+    background-color: #1a1a3a;
+    border-color: #6b8afd;
+}
+checkbutton check:checked {
+    background-color: #4a63d6;
+    border-color: #6b8afd;
+    color: #ffffff;
+}
+progressbar trough { background-color: #1a1a3a; border-color: #6b8afd; }
+progressbar progress { background-color: #4a63d6; }
+progressbar text { color: #ffffff; }
 """
 
 
+# ---------- font installer ----------
+
+# Progress payload passed from the worker thread back to the main
+# thread via GLib.idle_add. Fields:
+#   kind       — "status" (new overall step), "bytes" (download progress),
+#                "log" (append to scrolling log), "done" (worker exited).
+#   group_idx  — 0-based group counter, matches outer progress bar.
+#   group_total — total number of selected groups.
+#   group_label — human string for the current group.
+#   pkg_name   — current package name, if applicable.
+#   pkg_idx    — current package index within the group.
+#   pkg_total  — total packages in the current group.
+#   bytes_done — bytes downloaded so far (for "bytes").
+#   bytes_total — total bytes expected, or None if the server didn't
+#                 send Content-Length.
+#   message    — log line.
+#   ok         — final success flag (for "done").
+#   installed  — list of successfully installed group ids (for "done").
+Progress = Dict[str, object]
+
+
+def _safe_font_filename(name: str) -> bool:
+    """Reject archive entries with absolute paths, .., or control chars.
+
+    Downloaded TTF/OTF files land in a user-writable directory outside
+    the sandbox; a maliciously-crafted archive could otherwise drop a
+    file at /home/user/.ssh/authorized_keys or similar.
+    """
+    base = os.path.basename(name)
+    if not base or base.startswith(".") or "/" in base or "\\" in base:
+        return False
+    return base.lower().endswith((".ttf", ".otf"))
+
+
+def _extract_zip_fonts(archive: Path, dest: Path) -> int:
+    """Copy *.ttf/*.otf out of a zip into dest. Returns file count."""
+    count = 0
+    with zipfile.ZipFile(archive) as zf:
+        for member in zf.infolist():
+            if member.is_dir():
+                continue
+            name = member.filename
+            if not _safe_font_filename(name):
+                continue
+            target = dest / os.path.basename(name)
+            with zf.open(member) as src, target.open("wb") as fh:
+                shutil.copyfileobj(src, fh)
+            count += 1
+    return count
+
+
+def _extract_tar_fonts(archive: Path, dest: Path) -> int:
+    count = 0
+    with tarfile.open(archive, "r:*") as tf:
+        for member in tf:
+            if not member.isfile():
+                continue
+            if not _safe_font_filename(member.name):
+                continue
+            src = tf.extractfile(member)
+            if src is None:
+                continue
+            target = dest / os.path.basename(member.name)
+            with target.open("wb") as fh:
+                shutil.copyfileobj(src, fh)
+            count += 1
+    return count
+
+
+def _extract_exe_cab_fonts(archive: Path, dest: Path) -> int:
+    """Microsoft SFX cab (.exe). Shell out to cabextract."""
+    with tempfile.TemporaryDirectory(prefix="mdmx-cab-") as tdir:
+        # `-L` lower-cases filenames which simplifies the TTF glob. `-F`
+        # restricts extraction so only the fonts come out — avoids
+        # dropping readme.txt / fontinst.inf on us.
+        try:
+            subprocess.run(
+                ["cabextract", "-q", "-L", "-F", "*.TTF",
+                 "-d", tdir, str(archive)],
+                check=True, capture_output=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            logger.warning("cabextract failed on %s: %s", archive.name, exc)
+            return 0
+        count = 0
+        for root, _dirs, files in os.walk(tdir):
+            for fname in files:
+                if not fname.lower().endswith(".ttf"):
+                    continue
+                src = Path(root) / fname
+                target = dest / fname
+                shutil.copy2(src, target)
+                count += 1
+        return count
+
+
+def _download_to(
+    url: str,
+    dest: Path,
+    *,
+    cancel_event: threading.Event,
+    on_progress: Callable[[int, Optional[int]], None],
+    timeout: int = 1800,
+) -> None:
+    """Stream a URL to dest, reporting bytes_done / bytes_total.
+
+    Raises on failure; caller handles per-package exceptions. Respects
+    a cancel_event: if it fires mid-stream, abort and unlink the
+    partial file instead of truncating a half-download onto disk.
+    """
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "mdmx-fontsetup/1"}
+    )
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            total_hdr = r.headers.get("Content-Length")
+            total = int(total_hdr) if total_hdr and total_hdr.isdigit() else None
+            done = 0
+            on_progress(done, total)
+            with tmp.open("wb") as fh:
+                while True:
+                    if cancel_event.is_set():
+                        raise RuntimeError("cancelled")
+                    chunk = r.read(FONT_DOWNLOAD_CHUNK)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    done += len(chunk)
+                    on_progress(done, total)
+        tmp.replace(dest)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
+def _install_one_package(
+    pkg: Dict,
+    group_dir: Path,
+    *,
+    cancel_event: threading.Event,
+    report_bytes: Callable[[int, Optional[int]], None],
+    report_log: Callable[[str], None],
+) -> bool:
+    """Download + extract one package into group_dir. Returns True on success."""
+    name = pkg["name"]
+    url = pkg["url"]
+    fmt = pkg["format"]
+    report_log(f"⟳ {name} — downloading…")
+
+    with tempfile.TemporaryDirectory(prefix="mdmx-font-") as tdir:
+        archive = Path(tdir) / "download.bin"
+        try:
+            _download_to(
+                url, archive,
+                cancel_event=cancel_event,
+                on_progress=report_bytes,
+            )
+        except Exception as exc:
+            if cancel_event.is_set():
+                report_log(f"⨯ {name} — cancelled")
+            else:
+                report_log(f"⨯ {name} — download failed ({exc})")
+            return False
+
+        try:
+            group_dir.mkdir(parents=True, exist_ok=True)
+            if fmt == "zip":
+                count = _extract_zip_fonts(archive, group_dir)
+            elif fmt in ("tar.gz", "tar.gz-full"):
+                count = _extract_tar_fonts(archive, group_dir)
+            elif fmt == "exe-cab":
+                count = _extract_exe_cab_fonts(archive, group_dir)
+            elif fmt == "raw-ttf":
+                # Already a bare .ttf; copy using the package name.
+                target = group_dir / f"{name.replace(' ', '')}.ttf"
+                shutil.copy2(archive, target)
+                count = 1
+            else:
+                report_log(f"⨯ {name} — unknown format {fmt}")
+                return False
+        except Exception as exc:
+            report_log(f"⨯ {name} — extract failed ({exc})")
+            return False
+
+    if count == 0:
+        report_log(f"⚠ {name} — archive contained no fonts")
+        return False
+    report_log(f"✓ {name} — {count} font file(s)")
+    return True
+
+
+def _install_font_groups(
+    groups: List[Dict],
+    cancel_event: threading.Event,
+    on_progress: Callable[[Progress], None],
+) -> List[str]:
+    """Download + install selected groups sequentially. Returns ids installed."""
+    installed: List[str] = []
+    total = len(groups)
+    for idx, group in enumerate(groups):
+        if cancel_event.is_set():
+            break
+        group_dir = FONTS_DIR / group["id"]
+        on_progress({
+            "kind": "status",
+            "group_idx": idx,
+            "group_total": total,
+            "group_label": group["label"],
+            "pkg_idx": 0,
+            "pkg_total": len(group["packages"]),
+            "pkg_name": "",
+        })
+        on_progress({"kind": "log", "message": f"— {group['label']}"})
+
+        any_ok = False
+        for pidx, pkg in enumerate(group["packages"]):
+            if cancel_event.is_set():
+                break
+            on_progress({
+                "kind": "status",
+                "group_idx": idx,
+                "group_total": total,
+                "group_label": group["label"],
+                "pkg_idx": pidx,
+                "pkg_total": len(group["packages"]),
+                "pkg_name": pkg["name"],
+            })
+
+            def report_bytes(done, total_bytes, _pidx=pidx):
+                on_progress({
+                    "kind": "bytes",
+                    "bytes_done": done,
+                    "bytes_total": total_bytes,
+                })
+
+            def report_log(msg):
+                on_progress({"kind": "log", "message": msg})
+
+            ok = _install_one_package(
+                pkg, group_dir,
+                cancel_event=cancel_event,
+                report_bytes=report_bytes,
+                report_log=report_log,
+            )
+            any_ok = any_ok or ok
+
+        if any_ok:
+            installed.append(group["id"])
+
+    # fc-cache picks up the new files so subsequently-started apps see
+    # them without a logout. Scoped to the user's font dir to avoid
+    # EACCES on /usr/share/fonts.
+    try:
+        subprocess.run(
+            ["fc-cache", "-f", str(FONTS_DIR)],
+            check=False, capture_output=True, timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        on_progress({
+            "kind": "log",
+            "message": f"⚠ fc-cache failed ({exc}) — restart apps to see new fonts",
+        })
+    return installed
+
+
 class Wizard:
-    """Two-stage GTK3 wizard: keyboard layout, then per-output touch map."""
+    """GTK3 wizard: keyboard → timezone → optional fonts → per-output touch map."""
 
     def __init__(self, outputs: List[str]):
         import gi
@@ -490,6 +969,8 @@ class Wizard:
         self._selected_timezone: str = ""
         self._touch_map: Dict[str, str] = {}
         self._touch_devs: List[Tuple[str, str]] = []
+        self._installed_fonts: List[str] = []
+        self._fonts_decided: bool = False
         self._completed: bool = False
         self._install_css()
 
@@ -503,12 +984,26 @@ class Wizard:
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
         )
 
-    def run(self) -> Optional[Tuple[str, str, str, Dict[str, str]]]:
-        """Return (layout, variant, timezone, touch_map) on success, None if cancelled."""
+    def run(
+        self, offer_fonts: bool = True
+    ) -> Optional[Tuple[str, str, str, Dict[str, str], List[str], bool]]:
+        """Return a tuple of wizard results, or None if cancelled.
+
+        Tuple fields: (layout, variant, timezone, touch_map,
+        installed_font_group_ids, fonts_decided). The caller only persists
+        the font-related fields when `fonts_decided` is True — a
+        force-skipped page (offer_fonts=False) returns [] / False so the
+        existing INI isn't clobbered.
+        """
         if not self._run_keyboard_page():
             return None
         if not self._run_timezone_page():
             return None
+        if offer_fonts:
+            # Dialog can't be cancelled — "Skip" is a valid exit — so no
+            # return-value check here. Side effects land on
+            # self._installed_fonts / self._fonts_decided.
+            self._run_fonts_page()
         if self._outputs and not self._run_touch_calibration():
             return None
         self._completed = True
@@ -517,6 +1012,8 @@ class Wizard:
             self._selected_variant,
             self._selected_timezone,
             self._touch_map,
+            self._installed_fonts,
+            self._fonts_decided,
         )
 
     # ----- keyboard page -----
@@ -687,6 +1184,308 @@ class Wizard:
         win.show_all()
         Gtk.main()
         return bool(self._selected_timezone)
+
+    # ----- fonts page -----
+
+    def _run_fonts_page(self) -> None:
+        """Offer optional font downloads into ~/.local/share/fonts/.
+
+        Two windows back-to-back: a selection form, then (if the user
+        picked ≥1 group) a progress window that drives the actual
+        downloads on a background thread. Both record their outcome
+        into self._installed_fonts / self._fonts_decided so the caller
+        can persist the result without extra round-trips.
+        """
+        from gi.repository import Gtk
+
+        selected_groups = self._run_fonts_selection_page()
+        self._fonts_decided = True  # user has seen the page either way
+        if not selected_groups:
+            logger.info("fonts: user skipped the download page")
+            return
+        self._installed_fonts = self._run_fonts_install_page(selected_groups)
+
+    def _run_fonts_selection_page(self) -> List[Dict]:
+        from gi.repository import Gtk
+
+        win = Gtk.Window(title="MissionDMX setup — extra fonts")
+        win.set_default_size(820, 640)
+        win.set_position(Gtk.WindowPosition.CENTER)
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
+        outer.set_margin_top(32)
+        outer.set_margin_bottom(32)
+        outer.set_margin_start(40)
+        outer.set_margin_end(40)
+
+        title = Gtk.Label(label="Install extra fonts? (optional)")
+        title.get_style_context().add_class("title")
+        outer.pack_start(title, False, False, 0)
+
+        subtitle = Gtk.Label(
+            label="Selected packages are downloaded to "
+                  "~/.local/share/fonts/. Skip if your network is slow — "
+                  "you can rerun this later with "
+                  "`console-settings-daemon --reconfigure`."
+        )
+        subtitle.get_style_context().add_class("prompt")
+        subtitle.set_line_wrap(True)
+        subtitle.set_xalign(0.0)
+        outer.pack_start(subtitle, False, False, 0)
+
+        # One ListBoxRow per group. Store the group dict and the
+        # row's checkbutton + (optional) EULA checkbutton together so
+        # the submit handler can collect selections without another
+        # walk of FONT_GROUPS.
+        rows_state: List[Dict] = []
+
+        listbox = Gtk.ListBox()
+        listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        for group in FONT_GROUPS:
+            row = Gtk.ListBoxRow()
+            hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+            hbox.set_margin_top(12)
+            hbox.set_margin_bottom(12)
+            hbox.set_margin_start(12)
+            hbox.set_margin_end(12)
+
+            check = Gtk.CheckButton()
+            check.set_valign(Gtk.Align.START)
+            hbox.pack_start(check, False, False, 0)
+
+            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            label = Gtk.Label(
+                label=f"{group['label']}  ({group['approx_size']})"
+            )
+            label.set_xalign(0.0)
+            label.get_style_context().add_class("prompt")
+            vbox.pack_start(label, False, False, 0)
+            desc = Gtk.Label(label=group["description"])
+            desc.set_xalign(0.0)
+            desc.set_line_wrap(True)
+            vbox.pack_start(desc, False, False, 0)
+
+            eula_check: Optional[Gtk.CheckButton] = None
+            if group["eula"]:
+                eula_check = Gtk.CheckButton(
+                    label=f"I accept the EULA ({group['eula']})"
+                )
+                eula_check.set_sensitive(False)
+                vbox.pack_start(eula_check, False, False, 0)
+
+                def _sync_eula(cb, inner=eula_check):
+                    inner.set_sensitive(cb.get_active())
+                check.connect("toggled", _sync_eula)
+
+            hbox.pack_start(vbox, True, True, 0)
+            row.add(hbox)
+            listbox.add(row)
+            rows_state.append({
+                "group": group,
+                "check": check,
+                "eula_check": eula_check,
+            })
+
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.add(listbox)
+        outer.pack_start(scroll, True, True, 0)
+
+        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        buttons.set_halign(Gtk.Align.END)
+
+        skip = Gtk.Button(label="Skip")
+        skip.get_style_context().add_class("action")
+        skip.get_style_context().add_class("skip")
+
+        cont = Gtk.Button(label="Install selected")
+        cont.get_style_context().add_class("action")
+
+        chosen: List[Dict] = []
+
+        def on_cont(_btn):
+            chosen.clear()
+            for state in rows_state:
+                if not state["check"].get_active():
+                    continue
+                if state["eula_check"] is not None \
+                   and not state["eula_check"].get_active():
+                    # Highlight the missing EULA tick instead of silently
+                    # dropping the row — user otherwise won't know why
+                    # their selection didn't take.
+                    state["eula_check"].grab_focus()
+                    return
+                chosen.append(state["group"])
+            win.close()
+
+        def on_skip(_btn):
+            chosen.clear()
+            win.close()
+
+        cont.connect("clicked", on_cont)
+        skip.connect("clicked", on_skip)
+        buttons.pack_start(skip, False, False, 0)
+        buttons.pack_start(cont, False, False, 0)
+        outer.pack_end(buttons, False, False, 0)
+
+        win.add(outer)
+        win.connect("destroy", Gtk.main_quit)
+        win.show_all()
+        Gtk.main()
+        return chosen
+
+    def _run_fonts_install_page(self, groups: List[Dict]) -> List[str]:
+        from gi.repository import GLib, Gtk
+
+        win = Gtk.Window(title="MissionDMX setup — downloading fonts")
+        win.set_default_size(820, 560)
+        win.set_position(Gtk.WindowPosition.CENTER)
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
+        outer.set_margin_top(32)
+        outer.set_margin_bottom(32)
+        outer.set_margin_start(40)
+        outer.set_margin_end(40)
+
+        title = Gtk.Label(label="Downloading fonts")
+        title.get_style_context().add_class("title")
+        outer.pack_start(title, False, False, 0)
+
+        status_label = Gtk.Label(label="Preparing…")
+        status_label.get_style_context().add_class("prompt")
+        status_label.set_xalign(0.0)
+        outer.pack_start(status_label, False, False, 0)
+
+        # Outer bar: group-level completion. Inner bar: byte-level
+        # progress of the current download / extraction. A separate
+        # label under the inner bar shows "123 MB / 500 MB" so the user
+        # has a concrete answer to "is it still working?".
+        outer_bar = Gtk.ProgressBar()
+        outer_bar.set_show_text(True)
+        outer.pack_start(outer_bar, False, False, 0)
+
+        inner_bar = Gtk.ProgressBar()
+        inner_bar.set_show_text(True)
+        outer.pack_start(inner_bar, False, False, 0)
+
+        bytes_label = Gtk.Label(label="")
+        bytes_label.set_xalign(0.0)
+        outer.pack_start(bytes_label, False, False, 0)
+
+        log_buffer = Gtk.TextBuffer()
+        log_view = Gtk.TextView(buffer=log_buffer)
+        log_view.set_editable(False)
+        log_view.set_cursor_visible(False)
+        log_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        log_scroll = Gtk.ScrolledWindow()
+        log_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        log_scroll.set_min_content_height(220)
+        log_scroll.add(log_view)
+        outer.pack_start(log_scroll, True, True, 0)
+
+        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        buttons.set_halign(Gtk.Align.END)
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.get_style_context().add_class("action")
+        cancel_btn.get_style_context().add_class("skip")
+        close_btn = Gtk.Button(label="Close")
+        close_btn.get_style_context().add_class("action")
+        close_btn.set_sensitive(False)
+        buttons.pack_start(cancel_btn, False, False, 0)
+        buttons.pack_start(close_btn, False, False, 0)
+        outer.pack_end(buttons, False, False, 0)
+
+        win.add(outer)
+        win.connect("destroy", Gtk.main_quit)
+        win.show_all()
+
+        cancel_event = threading.Event()
+        state: Dict[str, object] = {"installed": [], "worker_done": False}
+
+        def apply_progress(prog: Progress) -> bool:
+            kind = prog.get("kind")
+            if kind == "status":
+                gi = prog["group_idx"]
+                gt = prog["group_total"]
+                outer_bar.set_fraction((gi) / max(gt, 1))
+                outer_bar.set_text(
+                    f"{gi + 1} of {gt} — {prog['group_label']}"
+                )
+                pkg = prog.get("pkg_name") or ""
+                pi = prog.get("pkg_idx", 0)
+                pt = prog.get("pkg_total", 1)
+                status_label.set_text(
+                    f"Package {pi + 1}/{pt}: {pkg}" if pkg
+                    else f"Starting group: {prog['group_label']}"
+                )
+                inner_bar.set_fraction(0.0)
+                inner_bar.set_text("")
+                bytes_label.set_text("")
+            elif kind == "bytes":
+                done = prog.get("bytes_done", 0)
+                total = prog.get("bytes_total")
+                if total:
+                    inner_bar.set_fraction(min(done / total, 1.0))
+                    inner_bar.set_text(f"{int(done * 100 / total)}%")
+                    bytes_label.set_text(
+                        f"{done / 1_000_000:.1f} / {total / 1_000_000:.1f} MB"
+                    )
+                else:
+                    inner_bar.pulse()
+                    bytes_label.set_text(f"{done / 1_000_000:.1f} MB")
+            elif kind == "log":
+                end = log_buffer.get_end_iter()
+                log_buffer.insert(end, (prog.get("message") or "") + "\n")
+                # Autoscroll to the newest entry.
+                mark = log_buffer.create_mark(None, log_buffer.get_end_iter(), False)
+                log_view.scroll_to_mark(mark, 0.0, False, 0.0, 0.0)
+            elif kind == "done":
+                state["installed"] = prog.get("installed", [])
+                state["worker_done"] = True
+                outer_bar.set_fraction(1.0)
+                outer_bar.set_text("Done")
+                status_label.set_text(
+                    "All selected packages processed."
+                    if prog.get("ok") else
+                    "Some downloads failed — see log."
+                )
+                inner_bar.set_fraction(1.0)
+                inner_bar.set_text("")
+                bytes_label.set_text("")
+                cancel_btn.set_sensitive(False)
+                close_btn.set_sensitive(True)
+            return False  # one-shot idle callback
+
+        def on_progress(prog: Progress) -> None:
+            GLib.idle_add(apply_progress, prog)
+
+        def worker() -> None:
+            installed: List[str] = []
+            ok = True
+            try:
+                installed = _install_font_groups(groups, cancel_event, on_progress)
+            except Exception as exc:
+                logger.exception("font install thread crashed")
+                on_progress({"kind": "log", "message": f"⨯ internal error: {exc}"})
+                ok = False
+            on_progress({"kind": "done", "installed": installed, "ok": ok})
+
+        th = threading.Thread(target=worker, name="mdmx-font-installer", daemon=True)
+        th.start()
+
+        def on_cancel(_btn):
+            cancel_event.set()
+            cancel_btn.set_sensitive(False)
+            status_label.set_text("Cancelling — finishing current chunk…")
+
+        def on_close(_btn):
+            win.close()
+
+        cancel_btn.connect("clicked", on_cancel)
+        close_btn.connect("clicked", on_close)
+
+        Gtk.main()
+        return list(state.get("installed", []))  # type: ignore[return-value]
 
     # ----- touch calibration -----
 
@@ -888,14 +1687,23 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     logger.info("entering wizard: %s", "; ".join(problems) or "forced")
 
+    # Offer the font download page only if the user hasn't already
+    # answered it before. --reconfigure overrides and re-shows the page
+    # so an operator can install additional families later.
+    fonts_section = get_fonts_section(cfg)
+    offer_fonts = args.reconfigure or not fonts_section.get("_decided")
+
     wizard = Wizard(outputs)
-    result = wizard.run()
+    result = wizard.run(offer_fonts=offer_fonts)
     if result is None:
         logger.warning("wizard cancelled")
         return 1
-    layout, variant, timezone, touch_map = result
+    layout, variant, timezone, touch_map, installed_fonts, fonts_decided = result
     set_input_section(cfg, layout, variant, touch_map)
     set_time_section(cfg, timezone)
+    if fonts_decided:
+        mark_fonts_decision_made(cfg)
+        mark_fonts_installed(cfg, installed_fonts)
     save_config(cfg)
 
     # Apply timezone before the (potential) sway restart — set-timezone

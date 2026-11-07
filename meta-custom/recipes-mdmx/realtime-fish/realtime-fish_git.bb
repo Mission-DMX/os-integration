@@ -99,3 +99,9 @@ do_install() {
 }
 
 FILES:${PN} += "${libexecdir}/fish"
+
+# mdmx-udev-rules grants the 'user' account (member of dialout) raw USB
+# access to the Enttec DMX USB Pro so fish doesn't need to be launched
+# as root. RRECOMMENDS keeps it a soft dep — fish still builds + runs
+# on a system that intentionally ships no udev rules.
+RRECOMMENDS:${PN} += "mdmx-udev-rules"
