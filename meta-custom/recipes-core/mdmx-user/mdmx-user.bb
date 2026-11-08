@@ -15,7 +15,13 @@ USERADD_PACKAGES = "${PN}"
 # wheel); create it explicitly here so useradd -G render succeeds.
 # `seat` is created by seatd — see DEPENDS below.
 GROUPADD_PARAM:${PN} = "-r render"
-USERADD_PARAM:${PN} = "-u 1000 -d /home/user -m -s /bin/bash \
+# Use the usrmerged path (/usr/bin/bash) rather than /bin/bash: pkexec
+# string-matches $SHELL against /etc/shells, and bash's postinst writes
+# ${base_bindir}/bash — which is /usr/bin/bash once usrmerge is on. A
+# /bin/bash login shell would be a valid symlink but would fail pkexec's
+# check with "The value for the SHELL variable was not found in the
+# /etc/shells file", blocking the console-menu update install path.
+USERADD_PARAM:${PN} = "-u 1000 -d /home/user -m -s /usr/bin/bash \
                       -G video,input,render,audio,dialout,seat,wheel user"
 
 # Empty password so the console login (autologin path or manual) works out of
