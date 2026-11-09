@@ -26,6 +26,9 @@ inherit allarch systemd features_check
 # openssl-bin gives us the openssl(1) CLI the checker shells out to for
 # CMS verification. rauc pulls in the D-Bus service the install helper
 # talks to. polkit backs the pkexec grant for the install helper.
+# glibc-utils provides getent(1), which the install helper uses to
+# resolve the launching user's $HOME by PKEXEC_UID (pkexec scrubs the
+# environment, so we can't trust $HOME from the caller).
 REQUIRED_DISTRO_FEATURES = "polkit systemd"
 
 RDEPENDS:${PN} = " \
@@ -36,6 +39,7 @@ RDEPENDS:${PN} = " \
     rauc \
     polkit \
     coreutils \
+    glibc-utils \
 "
 
 SYSTEMD_PACKAGES = "${PN}"
