@@ -1,0 +1,40 @@
+[Unit]
+Description=MediaMTX media streaming server
+Documentation=https://github.com/bluenviron/mediamtx
+After=network.target
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/mediamtx /etc/mediamtx.yml
+Restart=on-failure
+RestartSec=5
+
+# DynamicUser avoids tracking a system user via extrausers. StateDirectory
+# and RuntimeDirectory are mapped to /var/lib/private/mediamtx (visible
+# as /var/lib/mediamtx inside the unit) and /run/mediamtx respectively.
+DynamicUser=yes
+StateDirectory=mediamtx
+RuntimeDirectory=mediamtx
+
+# All default MediaMTX listeners (RTSP 8554, RTMP 1935, HLS 8888,
+# WebRTC 8889, SRT 8890, control API 9997) are > 1024, so no
+# AmbientCapabilities=CAP_NET_BIND_SERVICE grant is required.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# MemoryDenyWriteExecute deliberately omitted — Go's runtime maps
+# executable pages for GC write-barrier handling and some kernels will
+# refuse those maps under MDWE.
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
