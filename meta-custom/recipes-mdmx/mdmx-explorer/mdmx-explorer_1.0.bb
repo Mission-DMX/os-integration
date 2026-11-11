@@ -78,4 +78,10 @@ RDEPENDS:${PN} += " \
     wayland \
     libxkbcommon \
     dbus \
+    tar \
+    gzip \
+    pigz \
+    xz \
+    p7zip \
+    bzip2 \
 "

@@ -73,6 +73,42 @@ lands.
 ## Important
 Revert sway.service pixman renderer once debugging on a non-Nvidia host.
 
+## Multimedia (FFmpeg)
+The image ships FFmpeg as the general audio/video/image tool and as the
+producer side of the RTMP pipeline (with the `mediamtx` server already
+in the image as the sink). Because Mission-DMX is soft real-time, the
+CPU budget on the show host is not available for software video
+encoding — the expectation is that any transcode goes through the
+GPU via VAAPI.
+
+Enabled encoders:
+
+  * **H.264 / HEVC** via `h264_vaapi` / `hevc_vaapi` — Intel GPU hardware,
+    patent royalties covered by Intel. Preferred path for RTMP output.
+  * **VP8 / VP9** (`libvpx`) — royalty-free (Google/WebM patent grant).
+  * **MP3** (`libmp3lame`) — all MP3 patents expired in 2017.
+  * **Opus** (`libopus`) — royalty-free by IETF charter.
+  * **Vorbis** (`libvorbis`) — royalty-free by Xiph charter.
+  * **AAC** — FFmpeg's native encoder; LC-profile base patents expired.
+  * Native FFmpeg encoders for FLV1, MJPEG, MPEG-4 Part 2, PNG, etc.
+
+Decoders for essentially every mainstream format (including H.264/HEVC
+in software) are enabled by default — patent concerns around H.264/HEVC
+are on the encode side.
+
+Deliberately excluded: `x264` (software H.264 — unexpired AVC patent
+pool), `x265` (HEVC — patents through ~2033), `fdk-aac` (unexpired AAC
+pool, plus triggers FFmpeg's non-redistributable `--enable-nonfree`
+build). If software H.264 is ever required despite the CPU-budget
+concern, re-enabling it is a one-line change in
+`config/local.conf`: add `gpl x264` to the `PACKAGECONFIG:append:pn-ffmpeg`
+line.
+
+RTMP publishing works out of the box — the `rtmp://` protocol is in
+`libavformat` by default and the Adobe spec is unencumbered. `rtmps://`
+(RTMP-over-TLS) is not enabled; add the `openssl` PACKAGECONFIG if you
+need it.
+
 ## Known upstream quirks
 ### `mdmx-editor` — pdm pin
 `meta-custom/recipes-mdmx/mdmx-editor/mdmx-editor_git.bb` bootstraps `pdm`

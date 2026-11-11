@@ -36,6 +36,21 @@ do
 	fi
 done
 
+# RAUC A/B slot partitions: never auto-mount. The inactive slot is a
+# bare ext4 blob that `rauc install` writes to by opening the block
+# device directly (/dev/disk/by-partlabel/rootfs{A,B}); any mount would
+# hold the device open and make that open() fail with EBUSY. The active
+# slot is already excluded by the `root-fs device-number` check further
+# down, but relying on that leaves the inactive slot exposed. Filter by
+# PARTLABEL (ID_PART_ENTRY_NAME in udev events) rather than hardcoding a
+# /dev/... path so we stay correct across virtio/sata/nvme storage.
+case "${ID_PART_ENTRY_NAME:-}" in
+rootfsA|rootfsB)
+	logger "udev/mount.sh" "[$DEVNAME] is a RAUC rootfs slot (PARTLABEL=${ID_PART_ENTRY_NAME}); skipping auto-mount"
+	exit 0
+	;;
+esac
+
 is_filesystem_supported() {
     while read -r fs; do
        if [ "${fs#nodev}" = "$1" ];

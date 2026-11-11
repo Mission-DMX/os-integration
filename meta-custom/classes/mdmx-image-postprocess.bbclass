@@ -25,6 +25,16 @@
 DEPENDS:append = " mdmx-grubenv"
 do_image_wic[depends] += "mdmx-grubenv:do_deploy"
 
+# image_types_wic.bbclass only hashes the WKS file itself into
+# do_image_wic's signature. The grub.cfg that `bootloader --configfile=`
+# pulls in (via bootimg-efi) is NOT tracked, so editing mdmx-grub.cfg
+# leaves do_image_wic's sstate hash unchanged and bitbake reuses an old
+# wic with the stale config — producing "I rebuilt but it still has the
+# bug" surprises. bb.utils.which searches BBPATH (which includes this
+# layer) for the file and returns the absolute path.
+do_image_wic[file-checksums] += "${@bb.utils.which(d.getVar('BBPATH'), 'wic/mdmx-grub.cfg')}:True"
+do_image_wic[file-checksums] += "${@bb.utils.which(d.getVar('BBPATH'), 'wic/mdmx-grub-debug.cfg')}:True"
+
 # mdmx-ab.wks.in rawcopies ${IMAGE_LINK_NAME}.ext4 into the rootfsB
 # partition. do_image_ext4 and do_image_wic are peers under the image
 # recipe and bitbake runs them in parallel by default, so without this

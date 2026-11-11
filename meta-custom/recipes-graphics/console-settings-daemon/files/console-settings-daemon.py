@@ -194,6 +194,29 @@ FONT_GROUPS: List[Dict] = [
             },
         ],
     },
+    {
+        # OpenFont.org = "The Open Source Font Library", 1,933 OFL/Apache/MIT
+        # families curated from a wide range of designers (not the same set
+        # Google Fonts ships, though there is overlap on the big names like
+        # Fira / Inter / Noto / Cascadia). Bulk source is github.com/openfont/
+        # fonts @ ~1 GB. The GNU FreeFont bundle shipped under
+        # 'debian_free' above covers only 3 URW Nimbus families — zero
+        # overlap, so this is additive.
+        "id": "openfont",
+        "label": "OpenFont Library (full collection)",
+        "description": "Entire openfont.org catalog — 1,933 OFL/Apache/MIT "
+                       "fonts covering 147 languages. ~1 GB download. "
+                       "Several minutes on a fast link.",
+        "approx_size": "~1 GB",
+        "eula": None,
+        "packages": [
+            {
+                "name": "OpenFont Library",
+                "url": "https://github.com/openfont/fonts/archive/refs/heads/main.tar.gz",
+                "format": "tar.gz-full",
+            },
+        ],
+    },
 ]
 
 

@@ -31,10 +31,16 @@ Freshness test: an entry is a candidate iff its ``build_timestamp``
 sorts strictly greater than the local ``/etc/mdmx-build-timestamp``.
 Both use the ``YYYYMMDDhhmmss`` layout from bitbake's DATETIME, which
 already sorts identically to chronological order — no date parsing.
+
+``--force``: skip the freshness check and stage the newest manifest
+entry unconditionally. Used by developers to exercise the install path
+without having to cut a fresh server build between test cycles; the
+scheduled timer never passes this flag.
 """
 
 from __future__ import annotations
 
+import argparse
 import configparser
 import hashlib
 import json
@@ -249,14 +255,20 @@ def verify_hybrid(bundle: Path, sig: Path) -> bool:
     return True
 
 
-def pick_candidate(manifest: dict, local_ts: str) -> Optional[dict]:
-    """Newest bundle with a build_timestamp strictly greater than local."""
+def pick_candidate(manifest: dict, local_ts: str,
+                   ignore_local_ts: bool = False) -> Optional[dict]:
+    """Newest bundle with a build_timestamp strictly greater than local.
+
+    ``ignore_local_ts=True`` (the ``--force`` path) picks the newest
+    bundle regardless of the local build stamp. Intended for developer
+    debugging of the install path without needing a fresh server build.
+    """
     bundles = manifest.get("bundles") or []
     fresh = [
         b for b in bundles
         if isinstance(b, dict)
-        and str(b.get("build_timestamp", "")) > local_ts
         and b.get("file") and b.get("sig")
+        and (ignore_local_ts or str(b.get("build_timestamp", "")) > local_ts)
     ]
     if not fresh:
         return None
@@ -311,15 +323,37 @@ def main() -> int:
         format="%(levelname)s %(name)s: %(message)s",
     )
 
+    parser = argparse.ArgumentParser(
+        prog="mdmx-updater",
+        description="Check for OS updates, download + verify, mark as pending.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Stage the newest manifest entry as pending regardless of the "
+            "local build timestamp. Debug aid for the install path — avoids "
+            "needing a fresh server build between test cycles. Re-downloads "
+            "even when a matching pending marker already exists."
+        ),
+    )
+    args = parser.parse_args()
+
     base_url = load_server_url()
     local_ts = load_local_timestamp()
-    if not local_ts:
+    if not local_ts and not args.force:
         # Missing timestamp means every remote entry would look "newer"
-        # by string comparison — refuse rather than mis-trigger.
+        # by string comparison — refuse rather than mis-trigger. --force
+        # explicitly opts out of the freshness check, so a missing stamp
+        # is fine there.
         logger.error("no /etc/mdmx-build-timestamp on this system — skipping")
         return 1
 
-    logger.info("checking %s (local build %s)", base_url, local_ts)
+    logger.info(
+        "checking %s (local build %s%s)",
+        base_url, local_ts or "<missing>",
+        ", force" if args.force else "",
+    )
     try:
         raw = http_get(base_url + MANIFEST_NAME, MANIFEST_TIMEOUT)
         manifest = json.loads(raw)
@@ -327,13 +361,20 @@ def main() -> int:
         logger.error("manifest fetch failed: %s", exc)
         return 1
 
-    candidate = pick_candidate(manifest, local_ts)
+    candidate = pick_candidate(manifest, local_ts, ignore_local_ts=args.force)
     if candidate is None:
-        logger.info("up to date")
-        clear_pending()
+        # With --force this only fires when the server's manifest is
+        # empty / has no usable entries — otherwise there's always a max.
+        logger.info("up to date" if not args.force else "no bundles in manifest")
+        if not args.force:
+            clear_pending()
         return 0
 
-    if already_pending(candidate):
+    # --force deliberately skips the "already downloaded" short-circuit
+    # so the caller can re-run the download/install flow without having
+    # to clear the cache by hand. The scheduled (non-forced) path keeps
+    # the optimisation: one successful download is enough per candidate.
+    if not args.force and already_pending(candidate):
         logger.info(
             "already downloaded pending update %s", candidate["build_timestamp"]
         )
