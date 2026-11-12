@@ -59,11 +59,31 @@ mdmx_install_initrd () {
     if [ ! -d ${IMAGE_ROOTFS}/boot ]; then
         return
     fi
-    if [ -e ${DEPLOY_DIR_IMAGE}/${INITRAMFS_IMAGE}-${MACHINE}.cpio.gz ]; then
-        install -m 0644 ${DEPLOY_DIR_IMAGE}/${INITRAMFS_IMAGE}-${MACHINE}.cpio.gz ${IMAGE_ROOTFS}/boot/initrd
-    else
-        bbwarn "mdmx_install_initrd: no ${INITRAMFS_IMAGE} cpio.gz in ${DEPLOY_DIR_IMAGE}; /boot/initrd not installed"
+    if [ ! -e ${DEPLOY_DIR_IMAGE}/${INITRAMFS_IMAGE}-${MACHINE}.cpio.gz ]; then
+        # Historical behaviour was bbwarn — but a missing initrd silently
+        # ships a rootfs that boots to a read-only /home (no firstboot
+        # module runs → no userdata bind), and the mode is only noticed
+        # at runtime after a RAUC install lands on slot B. Fail the build
+        # loudly instead. The do_rootfs[depends] below guarantees the
+        # cpio.gz IS deployed in time, so hitting this branch means the
+        # initramfs image recipe itself failed or was stripped.
+        bbfatal "mdmx_install_initrd: ${INITRAMFS_IMAGE}-${MACHINE}.cpio.gz missing under ${DEPLOY_DIR_IMAGE} — the initramfs image did not deploy"
     fi
+    install -m 0644 ${DEPLOY_DIR_IMAGE}/${INITRAMFS_IMAGE}-${MACHINE}.cpio.gz ${IMAGE_ROOTFS}/boot/initrd
+}
+
+# Order mdmx-initramfs:do_image_complete BEFORE our do_rootfs so the
+# cpio.gz is guaranteed deployed by the time mdmx_install_initrd runs.
+# Without this, bitbake happily parallelises the two image builds and
+# whether /boot/initrd ends up installed is a coin flip (observed:
+# factory ext4 picks it up on one build, the next rebuild drops it; the
+# RAUC bundle install then puts a no-initrd rootfs on slot B and the
+# kernel boots there with no initramfs at all). Skip the dep on the
+# initramfs image itself to avoid a self-referential depends.
+python () {
+    initramfs = d.getVar('INITRAMFS_IMAGE')
+    if initramfs and d.getVar('PN') != initramfs:
+        d.appendVarFlag('do_rootfs', 'depends', ' %s:do_image_complete' % initramfs)
 }
 
 mdmx_motd_symlink () {
