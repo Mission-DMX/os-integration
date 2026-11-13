@@ -1,0 +1,22 @@
+[Unit]
+Description=Install the current pending bundle onto the inactive slot
+Documentation=man:rauc(1)
+# Run after the current slot has been marked good — attempting an
+# install before mark-good would set `other_TRY=0` on a slot that
+# itself hasn't yet earned the "good" verdict, defeating the A/B
+# fallback contract.
+After=mdmx-bootcheck.service graphical.target
+Wants=mdmx-bootcheck.service
+# Skip the unit entirely when there's nothing pending — avoids the
+# nuisance of a "mdmx-sync-slot: no pending marker" journal line on
+# every boot that didn't come from a RAUC install.
+ConditionPathExists=/home/user/.cache/mdmx-updater/pending.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/mdmx-sync-slot.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical.target

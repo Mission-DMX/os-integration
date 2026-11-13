@@ -16,7 +16,11 @@ SRC_URI = " \
 
 inherit allarch systemd
 
-RDEPENDS:${PN} = "grub-editenv"
+# rauc provides the preferred `rauc status mark-good booted` path that
+# keeps /var/lib/rauc/* and grubenv in sync. grub-editenv is still a
+# dep for the legacy fallback branch (and for the unrelated factory
+# grubenv tooling).
+RDEPENDS:${PN} = "grub-editenv rauc"
 
 do_install() {
     install -d ${D}${sbindir}

@@ -46,7 +46,25 @@ if [ ! -f "$bundle" ]; then
 fi
 
 echo "mdmx-updater-install: installing $bundle"
+
+# Persist rauc's install log to /var/log/update.log so the operator can
+# inspect it after the fact (via the GUI's "Show log" expander live, or
+# via a shell on the running system). Appended — not overwritten — so
+# earlier attempts remain available for post-mortem analysis. The ISO
+# timestamp line is a human-readable separator between install runs.
+mkdir -p /var/log
+printf '\n=== %s installing %s ===\n' \
+    "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$bundle" >> /var/log/update.log
+
 # RAUC handles verify (against /etc/rauc/mdmx-keyring.pem), slot pick,
 # extract, and grubenv marking. On success the target reboots into the
 # new slot on the next boot.
-exec /usr/bin/rauc install "$bundle"
+#
+# `set -o pipefail` so rauc's failure exit code propagates through the
+# `| tee` — without it, pipeline exit status would be tee's (0 unless
+# the disk is full), silently masking real install failures. The shell
+# can no longer `exec` into rauc (you can't exec a pipeline) but the
+# extra shell PID left alive during the install is a cheap trade for
+# correct error reporting + a persistent log.
+set -o pipefail
+/usr/bin/rauc install "$bundle" 2>&1 | tee -a /var/log/update.log

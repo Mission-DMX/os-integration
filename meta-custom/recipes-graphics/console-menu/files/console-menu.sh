@@ -66,11 +66,14 @@ case "$choice" in
         ;;
     "Install Update"*)
         log "update install requested"
-        # pkexec drops the user through a polkit rule (see
-        # 50-mdmx-updater.rules) that whitelists this exact program for
-        # `user`, no password prompt. The helper itself reads the
-        # pending marker and calls `rauc install`.
-        exec /usr/bin/pkexec /usr/libexec/mdmx-updater/mdmx-updater-install
+        # Hand off to the GUI installer. It takes exclusive control of
+        # the compositor via gtk-session-lock (same mechanism as
+        # console-lock), so a second waybar tap can't trigger a parallel
+        # install, shows progress parsed from rauc(1)'s stdout, and
+        # reboots into the new slot on success. pkexec elevation and
+        # the polkit-whitelisted install helper stay the same —
+        # mdmx-update-installer is the user-facing wrapper around them.
+        exec /usr/bin/mdmx-update-installer
         ;;
     "Reboot")
         log "reboot requested"
