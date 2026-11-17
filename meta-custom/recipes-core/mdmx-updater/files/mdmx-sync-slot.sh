@@ -78,7 +78,18 @@ notify --icon=system-software-update \
     "Updating backup slot" \
     "Installing version ${target_ts} onto the inactive slot…"
 
-if /usr/bin/rauc install "$bundle"; then
+# Mirror the foreground installer's logging posture (see
+# mdmx-updater-install): tee rauc's output to /var/log/update.log so
+# BOTH install attempts — the user-initiated one that writes the new
+# slot and this background sync onto the previously-booted slot — end
+# up in the same file for post-mortem. pipefail keeps rauc's exit code
+# visible through the pipeline; without it the shell would see tee's
+# status (0 unless disk-full) and the if-branch would always succeed.
+mkdir -p /var/log
+printf '\n=== %s sync-slot installing %s ===\n' \
+    "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$bundle" >> /var/log/update.log
+set -o pipefail
+if /usr/bin/rauc install "$bundle" 2>&1 | tee -a /var/log/update.log; then
     log "install OK; clearing pending marker"
 
     # rauc's grub bootloader handler always sets ORDER=<newly-written>
