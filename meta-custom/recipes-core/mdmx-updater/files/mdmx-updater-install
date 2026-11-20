@@ -56,6 +56,24 @@ mkdir -p /var/log
 printf '\n=== %s installing %s ===\n' \
     "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$bundle" >> /var/log/update.log
 
+# Workaround for a stale-state bug in rauc 1.14: once the service has
+# handled an early-boot `rauc status mark-good` (which our bootcheck
+# unit issues on every boot), subsequent `rauc install` calls fail
+# with "failed to load CA file '/etc/rauc/mdmx-keyring.pem'" even
+# though the keyring is intact — confirmed by comparing md5sum of the
+# file through the live service's /proc/PID/root view, and by the
+# fact that `rauc info` (which runs in-process, not through D-Bus)
+# verifies the same bundle's signature against the same keyring just
+# fine. A fresh service process restores working behaviour. Restart
+# before every install so we never depend on service history. The
+# cost is ~1s of D-Bus reactivation per install, invisible against
+# the install's total runtime.
+/bin/systemctl restart rauc.service
+# Brief settle so the first `rauc install` call finds the D-Bus name
+# re-registered. systemctl restart returns as soon as the unit reaches
+# "active", but the bus name is advertised a moment after.
+sleep 1
+
 # RAUC handles verify (against /etc/rauc/mdmx-keyring.pem), slot pick,
 # extract, and grubenv marking. On success the target reboots into the
 # new slot on the next boot.

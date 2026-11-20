@@ -136,4 +136,29 @@ mdmx_write_build_timestamp () {
 # rootfs sstate cache without reason.
 mdmx_write_build_timestamp[vardepsexclude] = "DATETIME"
 
-ROOTFS_POSTPROCESS_COMMAND:append = " mdmx_install_initrd; mdmx_motd_symlink; mdmx_create_mountpoints; mdmx_write_build_timestamp;"
+# Persistent systemd journal. Default is Storage=auto — journald only
+# persists if /var/log/journal exists, and nothing creates it today, so
+# every reboot loses the previous session's logs. That's painful for
+# post-mortem of background services like mdmx-sync-slot that run
+# late in boot and can only be inspected after the fact. Setting
+# Storage=persistent asks journald to create the directory itself; /var
+# is already on the userdata partition (bind-mounted by the firstboot
+# initramfs module), so the logs survive across reboots and across
+# RAUC installs that replace the rootfs ext4. Skipped for images with
+# no /etc (initramfs).
+mdmx_persistent_journal () {
+    if [ ! -d ${IMAGE_ROOTFS}${sysconfdir} ]; then
+        return
+    fi
+    install -d -m 0755 ${IMAGE_ROOTFS}${sysconfdir}/systemd/journald.conf.d
+    cat > ${IMAGE_ROOTFS}${sysconfdir}/systemd/journald.conf.d/50-mdmx-persistent.conf <<'EOF'
+# Set by mdmx-image-postprocess.bbclass. Keep journald persistence on
+# so background services (mdmx-sync-slot, the update timer, etc.) can
+# be inspected after the fact instead of only via a live terminal.
+[Journal]
+Storage=persistent
+EOF
+    chmod 0644 ${IMAGE_ROOTFS}${sysconfdir}/systemd/journald.conf.d/50-mdmx-persistent.conf
+}
+
+ROOTFS_POSTPROCESS_COMMAND:append = " mdmx_install_initrd; mdmx_motd_symlink; mdmx_create_mountpoints; mdmx_write_build_timestamp; mdmx_persistent_journal;"

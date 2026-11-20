@@ -88,6 +88,18 @@ notify --icon=system-software-update \
 mkdir -p /var/log
 printf '\n=== %s sync-slot installing %s ===\n' \
     "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$bundle" >> /var/log/update.log
+
+# Workaround for a stale-state bug in rauc 1.14: see the same comment
+# in mdmx-updater-install. After the service has handled an early-boot
+# `rauc status mark-good` (issued by mdmx-bootcheck on every boot),
+# subsequent `rauc install` calls through its D-Bus interface fail
+# with "failed to load CA file" even though the keyring on disk is
+# intact and `rauc info` (in-process) verifies the same bundle
+# successfully. Restart to get a fresh service process; the brief
+# D-Bus settle gives the bus name time to re-register.
+/bin/systemctl restart rauc.service
+sleep 1
+
 set -o pipefail
 if /usr/bin/rauc install "$bundle" 2>&1 | tee -a /var/log/update.log; then
     log "install OK; clearing pending marker"
