@@ -161,4 +161,29 @@ EOF
     chmod 0644 ${IMAGE_ROOTFS}${sysconfdir}/systemd/journald.conf.d/50-mdmx-persistent.conf
 }
 
-ROOTFS_POSTPROCESS_COMMAND:append = " mdmx_install_initrd; mdmx_motd_symlink; mdmx_create_mountpoints; mdmx_write_build_timestamp; mdmx_persistent_journal;"
+# Mount the ESP at /boot/efi at boot. GRUB's grubenv lives there; without
+# a real mount, every `rauc status mark-good`, every `grub-editenv set`,
+# and the rauc-mark-good.service all fail with
+#   grub-editenv: error: cannot open `/boot/efi/EFI/BOOT/grubenv.new':
+#     No such file or directory
+# because /boot/efi is an empty directory on the read-only rootfs. udev-
+# extraconf had been racing to auto-mount it at /run/media/esp-vda1
+# instead; adding this fstab entry both mounts it where rauc expects and
+# makes mount.sh's "skip partitions already in /etc/fstab" branch fire,
+# so the automount under /run/media stops.
+mdmx_fstab_boot_efi () {
+    if [ ! -d ${IMAGE_ROOTFS} ] || [ ! -e ${IMAGE_ROOTFS}/etc/fstab ]; then
+        return
+    fi
+    if grep -q '/boot/efi' ${IMAGE_ROOTFS}/etc/fstab; then
+        return
+    fi
+    cat >> ${IMAGE_ROOTFS}/etc/fstab <<'EOF'
+# ESP (GRUB config + grubenv). nofail so the box still boots if the
+# partition is missing on dev hardware; umask gives the user account
+# group access without exposing anything world-readable.
+PARTLABEL=esp   /boot/efi   vfat   defaults,nofail,umask=0007,uid=0,gid=0   0   2
+EOF
+}
+
+ROOTFS_POSTPROCESS_COMMAND:append = " mdmx_install_initrd; mdmx_motd_symlink; mdmx_create_mountpoints; mdmx_write_build_timestamp; mdmx_persistent_journal; mdmx_fstab_boot_efi;"

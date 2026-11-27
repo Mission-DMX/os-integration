@@ -73,10 +73,24 @@ jobs:
         run: |
           umask 077
           mkdir -p keys/signing
-          printf '%s' "$RSA_KEY"    > keys/signing/rsa.key
-          printf '%s' "$RSA_CERT"   > keys/signing/rsa.cert.pem
-          printf '%s' "$MLDSA_KEY"  > keys/signing/mldsa65.key
-          printf '%s' "$MLDSA_CERT" > keys/signing/mldsa65.cert.pem
+          # `printf '%s\n'` (not `printf '%s'`) so the file ends with a
+          # newline after `-----END <ENTITY>-----` regardless of whether
+          # the stored secret itself happens to carry one. A missing
+          # trailing newline on the two cert files silently poisons the
+          # trust bundle: sign-images.sh builds it with
+          #   cat "$RSA_CRT" "$MLDSA_CRT" > "$TRUST_BUNDLE"
+          # and without a terminating newline on $RSA_CRT the resulting
+          # bundle has `-----END CERTIFICATE------BEGIN CERTIFICATE-----`
+          # on one line, which OpenSSL's PEM scanner rejects as a single
+          # malformed cert. That ships in the ext4 as
+          # /etc/rauc/mdmx-keyring.pem, every device flashed from the
+          # build refuses to verify ANY bundle, and rauc install dies
+          # with "failed to load CA file". Idempotent — a trailing blank
+          # line after `-----END ...-----` is valid PEM either way.
+          printf '%s\n' "$RSA_KEY"    > keys/signing/rsa.key
+          printf '%s\n' "$RSA_CERT"   > keys/signing/rsa.cert.pem
+          printf '%s\n' "$MLDSA_KEY"  > keys/signing/mldsa65.key
+          printf '%s\n' "$MLDSA_CERT" > keys/signing/mldsa65.cert.pem
           chmod 600 keys/signing/rsa.key keys/signing/mldsa65.key
 
       - name: Initialize build dir and inject CI overrides into local.conf

@@ -103,7 +103,9 @@ FONT_GROUPS: List[Dict] = [
             },
             {
                 "name": "IBM Plex Mono",
-                "url": "https://github.com/IBM/plex/releases/download/v6.4.2/TrueType.zip",
+                # IBM's monorepo split per-family in 2024 — single combined
+                # TrueType.zip is gone, each family ships its own release.
+                "url": "https://github.com/IBM/plex/releases/download/@ibm/plex-mono@2.5.0/ibm-plex-mono.zip",
                 "format": "zip",
             },
         ],
@@ -111,8 +113,8 @@ FONT_GROUPS: List[Dict] = [
     {
         "id": "proportional",
         "label": "Proportional families",
-        "description": "Inter, IBM Plex Sans, Noto Sans/Serif/Mono core",
-        "approx_size": "~40 MB",
+        "description": "Inter, IBM Plex Sans/Serif, Noto Sans/Serif/Mono core",
+        "approx_size": "~50 MB",
         "eula": None,
         "packages": [
             {
@@ -121,39 +123,57 @@ FONT_GROUPS: List[Dict] = [
                 "format": "zip",
             },
             {
-                "name": "IBM Plex (full TrueType)",
-                "url": "https://github.com/IBM/plex/releases/download/v6.4.2/TrueType.zip",
+                "name": "IBM Plex Sans",
+                "url": "https://github.com/IBM/plex/releases/download/@ibm/plex-sans@1.3.6/ibm-plex-sans.zip",
                 "format": "zip",
             },
             {
+                "name": "IBM Plex Serif",
+                "url": "https://github.com/IBM/plex/releases/download/@ibm/plex-serif@2.0.0/ibm-plex-serif.zip",
+                "format": "zip",
+            },
+            {
+                # notofonts split into per-script repos; the aggregate
+                # `notofonts/notofonts.github.io` monorepo on raw.github
+                # carries the per-family variable TTFs. The old
+                # per-repo Pages URL (latin-greek-cyrillic/.../ttf/) 404s
+                # for Mono and the current GitHub Pages site falls back
+                # to an HTML dashboard for unknown paths (matching
+                # Content-Length but serving HTML), so we pin to
+                # raw.githubusercontent where a 404 is really a 404.
+                # Proportionals live under `/variable-ttf/`, mono under
+                # `/variable/`.
                 "name": "Noto Sans",
-                "url": "https://notofonts.github.io/latin-greek-cyrillic/fonts/NotoSans/googlefonts/ttf/NotoSans%5Bwdth%2Cwght%5D.ttf",
+                "url": "https://raw.githubusercontent.com/notofonts/notofonts.github.io/main/fonts/NotoSans/googlefonts/variable-ttf/NotoSans%5Bwdth%2Cwght%5D.ttf",
                 "format": "raw-ttf",
             },
             {
                 "name": "Noto Serif",
-                "url": "https://notofonts.github.io/latin-greek-cyrillic/fonts/NotoSerif/googlefonts/ttf/NotoSerif%5Bwdth%2Cwght%5D.ttf",
+                "url": "https://raw.githubusercontent.com/notofonts/notofonts.github.io/main/fonts/NotoSerif/googlefonts/variable-ttf/NotoSerif%5Bwdth%2Cwght%5D.ttf",
                 "format": "raw-ttf",
             },
             {
                 "name": "Noto Sans Mono",
-                "url": "https://notofonts.github.io/latin-greek-cyrillic/fonts/NotoSansMono/googlefonts/ttf/NotoSansMono%5Bwdth%2Cwght%5D.ttf",
+                "url": "https://raw.githubusercontent.com/notofonts/notofonts.github.io/main/fonts/NotoSansMono/googlefonts/variable/NotoSansMono%5Bwdth%2Cwght%5D.ttf",
                 "format": "raw-ttf",
             },
         ],
     },
     {
         "id": "debian_free",
-        "label": "Debian free fonts bundle",
-        "description": "URW Nimbus Sans / Mono / Roman (fonts-freefont-ttf)",
-        "approx_size": "~3 MB",
+        "label": "GNU FreeFont bundle",
+        "description": "FreeSans / FreeMono / FreeSerif (upstream of Debian's fonts-freefont-ttf)",
+        "approx_size": "~6 MB",
         "eula": None,
         "packages": [
             {
-                "name": "Debian fonts-freefont-ttf",
-                # Debian salsa serves the source tarball at a stable snapshot URL.
-                "url": "https://salsa.debian.org/fonts-team/fonts-freefont/-/archive/debian/20120503-11/fonts-freefont-debian-20120503-11.tar.gz",
-                "format": "tar.gz",
+                # The salsa snapshot ships only FontForge .sfd sources, not
+                # built TTFs. Grab GNU's upstream zip, which contains the
+                # same FreeSans/FreeMono/FreeSerif that Debian's
+                # fonts-freefont-ttf package carries.
+                "name": "GNU FreeFont",
+                "url": "https://ftp.gnu.org/gnu/freefont/freefont-ttf-20120503.zip",
+                "format": "zip",
             },
         ],
     },

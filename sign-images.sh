@@ -201,6 +201,31 @@ MLDSA_KEY="$KEYS_DIR/mldsa65.key"
 MLDSA_CRT="$KEYS_DIR/mldsa65.cert.pem"
 TRUST_BUNDLE="$KEYS_DIR/trust-bundle.pem"
 
+# Concatenate PEM files into a single bundle, ensuring each input ends
+# with a newline before the next starts. A naïve `cat A B > out` fuses
+# `-----END CERTIFICATE-----` from A onto `-----BEGIN CERTIFICATE-----`
+# of B into a single line if A happens to lack a trailing newline —
+# which has happened when the certs were materialised from CI secrets
+# via `printf '%s'` (see .github/workflows/main.yml). OpenSSL's PEM
+# scanner then rejects the whole file, mdmx-keyring.pem on every
+# flashed device becomes unparseable, and rauc install dies with
+# "failed to load CA file". The fix is cheap and idempotent; extra
+# blank lines between certs are valid PEM.
+#
+# Usage: concat_pem_certs <output> <input1> [<input2> ...]
+concat_pem_certs() {
+    local out="$1"; shift
+    : > "$out"
+    local f
+    for f in "$@"; do
+        cat "$f" >> "$out"
+        # Peek at the last byte. If it's not already \n, add one.
+        if [ -s "$f" ] && [ "$(tail -c 1 "$f" | od -An -tx1 | tr -d ' ')" != "0a" ]; then
+            printf '\n' >> "$out"
+        fi
+    done
+}
+
 gen_keys() {
     log "generating dev signing keys in $KEYS_DIR"
     install -d -m 0700 "$KEYS_DIR"
@@ -223,7 +248,7 @@ gen_keys() {
         2>/dev/null
     log "  wrote $MLDSA_CRT"
 
-    cat "$RSA_CRT" "$MLDSA_CRT" > "$TRUST_BUNDLE"
+    concat_pem_certs "$TRUST_BUNDLE" "$RSA_CRT" "$MLDSA_CRT"
     log "  wrote $TRUST_BUNDLE"
 }
 
@@ -238,7 +263,7 @@ if [ ! -s "$RSA_KEY" ] || [ ! -s "$RSA_CRT" ] \
     fi
     gen_keys
 elif [ ! -s "$TRUST_BUNDLE" ]; then
-    cat "$RSA_CRT" "$MLDSA_CRT" > "$TRUST_BUNDLE"
+    concat_pem_certs "$TRUST_BUNDLE" "$RSA_CRT" "$MLDSA_CRT"
 fi
 
 
